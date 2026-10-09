@@ -24,4 +24,4 @@
 "NSCalendarsFullAccessUsageDescription" = "Affiche vos prochains rendez-vous en haut de l’écran. Les événements du calendrier restent sur ce Mac.";
 
 /* macOS Local Network permission prompt. */
-"NSLocalNetworkUsageDescription" = "Vorssaint lit le signal et l’état de connexion de votre passerelle T-Mobile uniquement quand vous activez cette fonction. Les relevés de la passerelle restent sur ce Mac.";
+"NSLocalNetworkUsageDescription" = "Vorssaint lit l’état de votre passerelle T-Mobile quand cette fonction est activée et modifie les réglages Wi-Fi uniquement après votre confirmation. Les données de la passerelle restent sur ce Mac.";

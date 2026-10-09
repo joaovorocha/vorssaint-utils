@@ -24,4 +24,4 @@
 "NSCalendarsFullAccessUsageDescription" = "画面上部に今後の予定を表示します。カレンダーの予定がこのMacの外に送信されることはありません。";
 
 /* macOS Local Network permission prompt. */
-"NSLocalNetworkUsageDescription" = "Vorssaintは、この機能を有効にした場合にのみT-Mobileゲートウェイの信号と接続状態を読み取ります。ゲートウェイの測定値はこのMac内に保持されます。";
+"NSLocalNetworkUsageDescription" = "Vorssaintは、機能が有効なときにT-Mobileゲートウェイの状態を読み取り、確認後にのみWi-Fi設定を変更します。ゲートウェイのデータはこのMac内に保持されます。";

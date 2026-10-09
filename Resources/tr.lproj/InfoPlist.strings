@@ -24,4 +24,4 @@
 "NSCalendarsFullAccessUsageDescription" = "Yaklaşan randevularınızı ekranın üst kısmında gösterir. Takvim etkinlikleri bu Mac’te kalır.";
 
 /* macOS Local Network permission prompt. */
-"NSLocalNetworkUsageDescription" = "Vorssaint, T-Mobile ağ geçidinizin sinyal ve bağlantı durumunu yalnızca bu özelliği etkinleştirdiğinizde okur. Ağ geçidi ölçümleri bu Mac’te kalır.";
+"NSLocalNetworkUsageDescription" = "Vorssaint, etkinleştirdiğinizde T-Mobile ağ geçidinizin durumunu okur ve Wi-Fi ayarlarını yalnızca onayınızdan sonra değiştirir. Ağ geçidi verileri bu Mac’te kalır.";

@@ -60,7 +60,7 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Vorssaint reads signal and connection status from your T-Mobile gateway only when you enable it. Gateway readings stay on this Mac.</string>
+	<string>Vorssaint reads status from your T-Mobile gateway when enabled and changes Wi-Fi settings only after your confirmation. Gateway data stays on this Mac.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Vorssaint uses Automation to move files, send items to the Trash, open requested commands and control playback in your media apps.</string>
 	<key>NSAudioCaptureUsageDescription</key>

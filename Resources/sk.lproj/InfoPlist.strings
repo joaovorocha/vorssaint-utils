@@ -24,4 +24,4 @@
 "NSCalendarsFullAccessUsageDescription" = "Zobrazte svoje nadchádzajúce udalosti v hornej časti obrazovky. Udalosti kalendára ostávajú na tomto Macu.";
 
 /* macOS Local Network permission prompt. */
-"NSLocalNetworkUsageDescription" = "Vorssaint číta signál a stav pripojenia vašej brány T-Mobile len vtedy, keď túto funkciu zapnete. Údaje z brány ostávajú na tomto Macu.";
+"NSLocalNetworkUsageDescription" = "Vorssaint číta stav vašej brány T-Mobile, keď je funkcia zapnutá, a nastavenia Wi-Fi mení len po vašom potvrdení. Údaje z brány ostávajú na tomto Macu.";
