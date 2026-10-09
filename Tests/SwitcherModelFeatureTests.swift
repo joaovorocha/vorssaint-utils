@@ -1970,12 +1970,21 @@ enum SwitcherModelFeatureTests {
                && !SupportUpdateIntroInfo.shouldShow(appVersion: "3.4.1-beta.5", lastSeenVersion: nil)
                && !SupportUpdateIntroInfo.shouldShow(appVersion: "3.5.0", lastSeenVersion: nil),
                "support prompt never leaks into another release or a beta")
+        #if SHADOW_UTILITIES
+        suite.expect(AppInfo.discordURL == AppInfo.repositoryURL.appendingPathComponent("issues"),
+                     "fork support routes to its own issues")
+        suite.expect(AppInfo.coffeeURL == AppInfo.repositoryURL,
+                     "the fork does not solicit donations for the original publisher")
+        suite.expect(AppInfo.socialURL.absoluteString == "https://github.com/joaovorocha",
+                     "fork social links identify its own maintainer")
+        #else
         suite.expect(AppInfo.discordURL.absoluteString == "https://discord.gg/M6BwWH4BJp",
                "the community action uses the permanent Discord invitation")
         suite.expect(AppInfo.coffeeURL.absoluteString == "https://buymeacoffee.com/vorssaint",
                "financial support uses Buy Me a Coffee")
         suite.expect(AppInfo.socialURL.absoluteString == "https://x.com/vorssaint",
-               "social previews keep the official X profile")
+                     "social previews keep the official X profile")
+        #endif
         // AppInfo.version falls back to "dev" in this bare harness, so read
         // the plist the shipped app will actually carry. The pin is a
         // per-release decision: this check fails on every version bump so the

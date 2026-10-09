@@ -69,6 +69,8 @@ The initial ad-hoc build cannot participate in trusted automatic updates. Instal
 
 `./build.sh --fork` produces `build/stage/Shadow Utilities.app`; `./build.sh --fork --test` runs the test harness. Setting `SHADOW_UPDATE_TEAM_ID` while building embeds the intended signer pin; a releasable build still requires the matching real Developer ID certificate and successful signature/notarization checks. `Tools/fork-package.sh` refuses an unsigned or incorrectly identified app.
 
+Use Shadow Utilities’ in-app uninstall to remove this fork. The inherited `Tools/uninstall.sh` targets the original Vorssaint installation.
+
 If an upstream proposal breaks a feature, leave its PR unmerged, resolve on its proposal branch or close it, and retain the last known-good fork `main`. If a draft is wrong, leave it unpublished and correct the source in a new version. If an already-published release is faulty, stop offering it and install a prior known-good signed DMG manually; do not replace its assets or silently retag another binary.
 
 Validation of this source change does not create the certificate, configure GitHub protections, exercise Apple notarization, or publish an artifact. Those remain explicit owner setup/release steps. GitHub Actions pins were checked against the official action repositories on 2026-10-08: `actions/checkout` v7 `3d3c42e5aac5ba805825da76410c181273ba90b1`, `actions/upload-artifact` v7 `cf430e030ddbb5b0abf93d22962f4752f3646cd9`, and `actions/download-artifact` v7 `37930b1c2abaa49bbe596cd826c3c89aef350131`.
