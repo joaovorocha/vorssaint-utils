@@ -144,6 +144,10 @@ struct MetricsTests {
                 SpeedTestTests.run(suite)
                 NetworkAddressTests.run { suite.expect($0, $1) }
             }),
+            ("tmobile", {
+                TMobileGatewayTests.run(suite)
+                TMobileGatewayIntegrationTests.run(suite)
+            }),
             ("app-updates", {
                 AppUpdatesContract.run(suite)
                 AppUpdateRulesContract.run(suite)

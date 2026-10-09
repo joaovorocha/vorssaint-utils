@@ -520,6 +520,9 @@ if (( TEST )); then
         Sources/Vorssaint/Services/Metrics/NetworkProcessSupport.swift
         Sources/Vorssaint/Services/Metrics/NetworkSampler.swift
         Sources/Vorssaint/Services/Metrics/NetworkAddressService.swift
+        Sources/Vorssaint/Services/Metrics/TMobileGatewaySupport.swift
+        Sources/Vorssaint/Services/Metrics/TMobileGatewayService.swift
+        Sources/Vorssaint/Core/TMobileGatewayStrings.swift
         Sources/Vorssaint/Services/Metrics/SpeedTest.swift
         Sources/Vorssaint/Services/Metrics/PeripheralBatterySampler.swift
         Sources/Vorssaint/Services/Metrics/PeripheralBatterySupport.swift
