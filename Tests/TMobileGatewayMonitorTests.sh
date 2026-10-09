@@ -13,3 +13,28 @@ swiftc -Onone -sdk "$task_sdk" -module-cache-path "$task_temp/module-cache" \
     Sources/Vorssaint/Services/Metrics/TMobileGatewayMonitor.swift \
     Tests/Fixtures/TMobileGatewayMonitorHarness.swift -o "$task_temp/tests"
 "$task_temp/tests"
+
+# Compile the real grouping switch against every production metric case. This
+# catches a new pin omitted from either grouping or click focus handling.
+python3 - "$task_temp" <<'PY'
+from pathlib import Path
+import importlib.util
+import sys
+
+spec = importlib.util.spec_from_file_location("test_generator", "Tests/generate_sources.py")
+generator = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(generator)
+cases = "\n".join(line for line in generator.declaration(
+    "Sources/Vorssaint/App/MenuBarRenderer.swift", "enum MenuBarMetric:").splitlines()
+    if line.startswith("    case "))
+method = generator.declaration("Sources/Vorssaint/App/StatusItemController.swift",
+                               "    static func metricStatusGroups(")
+method = method.replace("UserDefaults.standard", "ReviewDefaults.current!")
+fixture = Path("Tests/Fixtures/TMobileMenuBarGroupsHarness.swift").read_text()
+fixture = fixture.replace("    // PRODUCTION_METRIC_CASES", cases)
+fixture = fixture.replace("    // PRODUCTION_GROUPS_METHOD", method)
+Path(sys.argv[1], "Groups.swift").write_text(fixture)
+PY
+swiftc -parse-as-library -Onone -sdk "$task_sdk" -module-cache-path "$task_temp/module-cache" \
+    "$task_temp/Groups.swift" -o "$task_temp/groups-tests"
+"$task_temp/groups-tests"
