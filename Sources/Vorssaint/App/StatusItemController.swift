@@ -6,7 +6,6 @@ import Combine
 
 /// Owns the menu bar presence: the black hole glyph, the optional countdown
 /// title and the tooltip. Click handling is delegated back to the AppDelegate.
-@MainActor
 final class StatusItemController {
     var onLeftClick: (() -> Void)?
     /// Receives the button that was clicked, so a menu can open from it
@@ -195,10 +194,14 @@ final class StatusItemController {
             .sink { [weak self] _ in self?.refresh() }
             .store(in: &cancellables)
 
-        TMobileGatewayMonitor.shared.service.$snapshot
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.refresh() }
-            .store(in: &cancellables)
+        // AppKit creates/binds this controller on the main thread. Confine
+        // the actor boundary here without changing the controller's API.
+        MainActor.assumeIsolated {
+            TMobileGatewayMonitor.shared.service.$snapshot
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in self?.refresh() }
+                .store(in: &cancellables)
+        }
 
         SystemMonitor.shared.$snapshot
             .receive(on: DispatchQueue.main)
@@ -288,7 +291,7 @@ final class StatusItemController {
         let interval = Defaults.sanitizedMonitorInterval(defaults.integer(forKey: DefaultsKey.monitorInterval))
         SystemMonitor.shared.setInterval(seconds: interval)
         SystemMonitor.shared.setMenuBarActive(MenuBarMetric.enabled(in: defaults).contains { $0.tMobileReading == nil })
-        TMobileGatewayMonitor.shared.syncPreferences()
+        MainActor.assumeIsolated { TMobileGatewayMonitor.shared.syncPreferences() }
     }
 
     private func syncTitleTimer(keepAwakeActive: Bool,
@@ -500,7 +503,7 @@ final class StatusItemController {
                                                           metrics: metrics,
                                                           allowStacked: !includesCountdown,
                                                           linePrefix: " ",
-                                                          gatewaySnapshot: TMobileGatewayMonitor.shared.service.snapshot)
+                                                          gatewaySnapshot: gatewaySnapshot)
             if metricsTitle.length > 0 {
                 if title.length > 0 { title.append(NSAttributedString(string: "  ")) }
                 title.append(metricsTitle)
@@ -573,7 +576,7 @@ final class StatusItemController {
         let gatewayAccessibility = metrics.compactMap { metric -> String? in
             guard let reading = metric.tMobileReading else { return nil }
             return TMobileGatewayMenuBarSupport.display(reading,
-                snapshot: TMobileGatewayMonitor.shared.service.snapshot,
+                snapshot: gatewaySnapshot,
                 signalStyle: defaultsSignalStyle(for: reading)).accessibilityValue
         }.joined(separator: ", ")
         let appName = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
@@ -615,7 +618,7 @@ final class StatusItemController {
             let title = MenuBarRenderer.attributed(for: snapshot,
                                                    metrics: group.metrics,
                                                    allowStacked: false,
-                                                   gatewaySnapshot: TMobileGatewayMonitor.shared.service.snapshot)
+                                                   gatewaySnapshot: gatewaySnapshot)
             let empties = title.length > 0 ? 0 : (metricEmptyRenders[group.id] ?? 0) + 1
             metricEmptyRenders[group.id] = empties
             guard MenuBarSpacingSupport.keepsMetricStatusItem(
@@ -655,13 +658,19 @@ final class StatusItemController {
             let readings = group.metrics.compactMap { metric -> String? in
                 guard let reading = metric.tMobileReading else { return nil }
                 return TMobileGatewayMenuBarSupport.display(reading,
-                    snapshot: TMobileGatewayMonitor.shared.service.snapshot,
+                    snapshot: gatewaySnapshot,
                     signalStyle: defaultsSignalStyle(for: reading)).accessibilityValue
             }
             let accessibleTitle = readings.isEmpty ? group.title : readings.joined(separator: ", ")
             if button.toolTip != accessibleTitle { button.toolTip = accessibleTitle }
             button.setAccessibilityLabel(accessibleTitle)
         }
+    }
+
+    /// Rendering is entered from AppKit callbacks, the main run loop or
+    /// publishers explicitly delivered to DispatchQueue.main.
+    private var gatewaySnapshot: TMobileGatewaySnapshot? {
+        MainActor.assumeIsolated { TMobileGatewayMonitor.shared.service.snapshot }
     }
 
     private func defaultsSignalStyle(for reading: TMobileGatewayMenuBarReading) -> String {
