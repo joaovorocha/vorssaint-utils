@@ -716,7 +716,10 @@ final class StatusItemController {
                                      temperature: .batteryTemperature,
                                      primaryTitle: strings.batteryLabel)
             case .memory, .network, .diskUsage, .diskActivity, .batteryTime, .peripheralBattery, .power,
-                 .fanSpeed, .connectedDevices:
+                 .fanSpeed, .connectedDevices,
+                 .tMobileLTE, .tMobile5G, .tMobileLTEBands, .tMobile5GBands,
+                 .tMobileLTERSRP, .tMobile5GRSRP, .tMobileLTERSINR, .tMobile5GSINR,
+                 .tMobileLTERSRQ, .tMobile5GRSRQ, .tMobileLTERSSI, .tMobile5GRSSI:
                 let id = metric.rawValue
                 guard emittedIDs.insert(id).inserted else { continue }
                 groups.append(MetricStatusGroup(id: id,
