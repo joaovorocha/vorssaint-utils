@@ -148,6 +148,8 @@ struct MetricsTests {
                 TMobileGatewayTests.run(suite)
                 TMobileGatewayIntegrationTests.run(suite)
             }),
+            ("fork-identity", { FanControlIdentityTests.run(suite) }),
+            ("fork-sharing", { ForkSharingTests.run(suite) }),
             ("app-updates", {
                 AppUpdatesContract.run(suite)
                 AppUpdateRulesContract.run(suite)

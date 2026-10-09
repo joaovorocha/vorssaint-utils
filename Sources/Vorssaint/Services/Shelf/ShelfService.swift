@@ -2226,6 +2226,9 @@ final class ShelfService: ObservableObject {
     }
 
     private func cleanLegacyTemporaryFiles() {
+        #if SHADOW_UTILITIES
+        return // Never sweep the original app's legacy temporary directory.
+        #else
         let legacyDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("VorssaintShelf", isDirectory: true)
         guard legacyDir != tempDir,
@@ -2235,6 +2238,7 @@ final class ShelfService: ObservableObject {
         for url in entries where url.pathExtension.lowercased() == "png" {
             try? FileManager.default.removeItem(at: url)
         }
+        #endif
     }
 
     private func isShelfOwnedFile(_ url: URL) -> Bool {

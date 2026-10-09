@@ -14,7 +14,9 @@ struct FeedbackView: View {
     @State private var wasSent = false
     @State private var errorMessage: String?
 
+    #if !SHADOW_UTILITIES
     private let diagnostics = FeedbackDiagnostics.current()
+    #endif
 
     init(initialKind: FeedbackKind = .bug, onClose: @escaping () -> Void) {
         _kind = State(initialValue: initialKind)
@@ -32,11 +34,15 @@ struct FeedbackView: View {
         VStack(spacing: 0) {
             header
             Divider()
+            #if SHADOW_UTILITIES
+            forkFeedback
+            #else
             if wasSent {
                 sentView
             } else {
                 form
             }
+            #endif
         }
         .frame(width: 600, height: 650)
     }
@@ -55,6 +61,27 @@ struct FeedbackView: View {
         .padding(.vertical, 18)
     }
 
+    #if SHADOW_UTILITIES
+    private var forkFeedback: some View {
+        VStack(spacing: 18) {
+            Text(AppInfo.name)
+                .font(.title2.weight(.semibold))
+            Text("Report bugs and request features in this fork’s GitHub repository.")
+                .multilineTextAlignment(.center)
+            Text("GitHub issues are public. Review your report before posting; no diagnostics are attached automatically.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Link(destination: AppInfo.repositoryURL.appendingPathComponent("issues")) {
+                Label("Open GitHub issues", systemImage: "arrow.up.right.square")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+        .frame(maxWidth: 420, maxHeight: .infinity)
+        .padding(32)
+    }
+    #else
     private var form: some View {
         VStack(spacing: 0) {
             ScrollView {
@@ -167,7 +194,7 @@ struct FeedbackView: View {
 
     private var diagnosticsPreview: some View {
         Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 5) {
-            diagnosticRow("Vorssaint", "\(diagnostics.appVersion) (\(diagnostics.appBuild))")
+            diagnosticRow(AppInfo.name, "\(diagnostics.appVersion) (\(diagnostics.appBuild))")
             diagnosticRow("macOS", diagnostics.macOS)
             if let model = diagnostics.macModel { diagnosticRow("Mac", model) }
             diagnosticRow(l10n.s.languageLabel, diagnostics.language)
@@ -229,4 +256,5 @@ struct FeedbackView: View {
             isSending = false
         }
     }
+    #endif
 }

@@ -76,7 +76,8 @@ final class RecordingShareService: ObservableObject {
     func createLink(artifact: RecorderExporter.ShareArtifact,
                     duration: RecordingShareDuration) async throws -> RecordingShareRecord {
         defer { artifact.discard() }
-        guard UserDefaults.standard.bool(forKey: DefaultsKey.recorderSharingEnabled) else {
+        guard RecordingSharingSupport.isAvailable,
+              UserDefaults.standard.bool(forKey: DefaultsKey.recorderSharingEnabled) else {
             throw RecordingShareError.unavailable
         }
         let file = artifact.fileURL
@@ -166,6 +167,7 @@ final class RecordingShareService: ObservableObject {
     }
 
     private func deleteRemote(_ record: RecordingShareRecord) async throws {
+        guard RecordingSharingSupport.isAvailable else { throw RecordingShareError.unavailable }
         let url = record.endpoint.appendingPathComponent("v1", isDirectory: true)
             .appendingPathComponent("recordings", isDirectory: true)
             .appendingPathComponent(record.id, isDirectory: false)

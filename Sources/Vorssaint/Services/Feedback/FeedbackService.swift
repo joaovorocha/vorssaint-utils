@@ -58,11 +58,14 @@ enum FeedbackError: Error {
 final class FeedbackService {
     static let shared = FeedbackService()
 
+    #if !SHADOW_UTILITIES
     private let endpoint = URL(string: "https://screenshots.vorssaint.com/v1/feedback")!
     private let session: URLSession
     private let encoder = JSONEncoder()
+    #endif
 
     private init() {
+        #if !SHADOW_UTILITIES
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -72,11 +75,17 @@ final class FeedbackService {
         configuration.timeoutIntervalForResource = 30
         configuration.waitsForConnectivity = false
         session = URLSession(configuration: configuration)
+        #endif
     }
 
     func submit(kind: FeedbackKind,
                 message: String,
                 diagnostics: FeedbackDiagnostics?) async throws {
+        #if SHADOW_UTILITIES
+        // Fork feedback is composed on GitHub by the user. No upstream
+        // endpoint or diagnostics transport is present in this variant.
+        throw FeedbackError.unavailable
+        #else
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.utf16.count >= 10, trimmed.utf16.count <= 2_000 else {
             throw FeedbackError.rejected
@@ -119,5 +128,6 @@ final class FeedbackService {
         default:
             throw FeedbackError.rejected
         }
+        #endif
     }
 }

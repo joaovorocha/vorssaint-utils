@@ -26,8 +26,13 @@ enum WallpaperStore {
 
     // lives with the app, not in the system wallpaper store
     static var backupURL: URL {
+        #if SHADOW_UTILITIES
+        let fallbackID = "io.github.joaovorocha.shadowutils"
+        #else
+        let fallbackID = "com.vorssaint.utils"
+        #endif
         let fallback = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-            .appendingPathComponent("Library/Application Support/com.vorssaint.utils",
+            .appendingPathComponent("Library/Application Support/\(fallbackID)",
                                     isDirectory: true)
         let container = PrivateFileStore.containerURL ?? fallback
         return container.appendingPathComponent("WallpaperIndex.vorssaint-bak",
@@ -42,6 +47,9 @@ enum WallpaperStore {
 
     // move a pristine system-side bak into App Support once (older builds)
     static func migrateLegacyBackupIfNeeded() {
+        #if SHADOW_UTILITIES
+        return // The original app owns its legacy system backup.
+        #else
         let backup = backupURL
         let legacy = legacySystemBackupURL
         guard !FileManager.default.fileExists(atPath: backup.path),
@@ -55,6 +63,7 @@ enum WallpaperStore {
         } catch {
             // leave legacy in place for a later apply/migrate
         }
+        #endif
     }
 
     @discardableResult
@@ -122,9 +131,11 @@ enum WallpaperStore {
         if FileManager.default.fileExists(atPath: backup.path) {
             try? FileManager.default.removeItem(at: backup)
         }
+        #if !SHADOW_UTILITIES
         let legacy = legacySystemBackupURL
         if FileManager.default.fileExists(atPath: legacy.path) {
             try? FileManager.default.removeItem(at: legacy)
         }
+        #endif
     }
 }

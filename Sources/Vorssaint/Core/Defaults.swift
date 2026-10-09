@@ -1125,6 +1125,11 @@ enum PreviewSizing {
 }
 
 enum Defaults {
+    #if SHADOW_UTILITIES
+    private static let sharingEnabledByDefault = false
+    #else
+    private static let sharingEnabledByDefault = true
+    #endif
     static let finderBundleIdentifier = "com.apple.finder"
     /// Continuity / Calls on Mac. Quitting Phone when its UI flickers window-less
     /// during an incoming relay disconnects the call (issue #1534). Kept in the
@@ -1817,7 +1822,7 @@ enum Defaults {
         DefaultsKey.recorderGIFSize: RecorderSupport.GIFSize.medium.rawValue,
         DefaultsKey.recorderGIFFrameRate: 12,
         DefaultsKey.recorderEditorPresets: Data(),
-        DefaultsKey.recorderSharingEnabled: true,
+        DefaultsKey.recorderSharingEnabled: sharingEnabledByDefault,
         DefaultsKey.panelUtilityScreenRecorder: true,
         DefaultsKey.panelUtilityPortManager: true,
         DefaultsKey.screenshotShowCaptureMenuOnShortcut: true,
@@ -1881,7 +1886,7 @@ enum Defaults {
         DefaultsKey.screenshotUploadDuration: ScreenshotShareDuration.oneHour.rawValue,
         DefaultsKey.screenshotPreviewEnabled: true,
         DefaultsKey.screenshotPreviewDuration: ScreenshotSupport.defaultConfirmationPreviewDuration,
-        DefaultsKey.screenshotSharingEnabled: true,
+        DefaultsKey.screenshotSharingEnabled: sharingEnabledByDefault,
         DefaultsKey.panelUtilityScreenshot: true,
         DefaultsKey.windowLayoutShortcutsEnabled: false,
         DefaultsKey.windowDirectionalEnabled: false,

@@ -48,8 +48,9 @@ enum RecorderFeatureTests {
                "a recording carries the sound of the Mac unless the person turns it off")
         suite.expect(Defaults.registeredDefaults[DefaultsKey.recorderMicrophone] as? Bool == false,
                "microphone recording is optional and ships off")
-        suite.expect(Defaults.registeredDefaults[DefaultsKey.recorderSharingEnabled] as? Bool == true,
-               "temporary recording links stay visible but do nothing until explicitly used")
+        suite.expect(Defaults.registeredDefaults[DefaultsKey.recorderSharingEnabled] as? Bool
+                == RecordingSharingSupport.isAvailable,
+               "temporary recording links default to availability in the current app variant")
         suite.expect(Defaults.registeredDefaults[DefaultsKey.recorderQuality] as? String == "balanced"
                 && Defaults.registeredDefaults[DefaultsKey.recorderFrameRate] as? Int == 60
                 && Defaults.registeredDefaults[DefaultsKey.recorderCountdown] as? Int == 3
@@ -107,10 +108,15 @@ enum RecorderFeatureTests {
         let recordingShareEndpoint = RecordingSharingSupport.endpoint(
             bundleIdentifier: RecordingSharingSupport.developerBundleIdentifier,
             developerOverride: "https://test.example/")
+        #if SHADOW_UTILITIES
+        suite.expect(RecordingSharingSupport.uploadURL(endpoint: recordingShareEndpoint, duration: .sixHours) == nil,
+                     "fork recordings cannot construct an upload route")
+        #else
         suite.expect(RecordingSharingSupport.uploadURL(endpoint: recordingShareEndpoint,
                                                  duration: .sixHours)?.absoluteString
                 == "https://test.example/v1/recordings?expiresIn=21600",
                "recording sharing uses its fixed endpoint and expiration query")
+        #endif
         let recordingID = String(repeating: "r", count: 32)
         let recordingResponse = RecordingShareResponse(
             id: recordingID,

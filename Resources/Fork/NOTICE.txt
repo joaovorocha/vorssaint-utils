@@ -1,0 +1,11 @@
+Shadow Utilities is an independent, unofficial fork maintained at
+https://github.com/joaovorocha/vorssaint-utils
+
+Based on Vorssaint, copyright (C) 2026 Vorssaint and contributors.
+Source: https://github.com/vorssaint/vorssaint-utils
+Distributed under GPL-3.0-or-later; see the included LICENSE.
+The original project does not endorse or provide support for this fork.
+
+Shadow Utilities uses its own app identity, icon, signing identity and release
+feed. The T-Mobile monitor reads supported gateway metrics locally only after
+the user enables it. See docs/TMOBILE-GATEWAY.md in the source repository.

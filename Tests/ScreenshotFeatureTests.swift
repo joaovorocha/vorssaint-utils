@@ -86,10 +86,18 @@ enum ScreenshotFeatureTests {
                          "the upload shortcut uses each supported saved expiry")
             let url = ScreenshotSharingSupport.uploadURL(
                 endpoint: ScreenshotSharingSupport.productionEndpoint,
-                duration: .saved(in: uploadDefaults))!
+                duration: .saved(in: uploadDefaults))
+            #if SHADOW_UTILITIES
+            suite.expect(url == nil, "fork upload shortcuts cannot construct a remote request")
+            #else
+            guard let url else {
+                suite.expect(false, "upstream upload shortcut has an upload route")
+                continue
+            }
             suite.expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first?.value == String(duration.rawValue),
                          "the saved shortcut expiry reaches the upload request")
+            #endif
         }
         uploadDefaults.set(-1, forKey: DefaultsKey.screenshotUploadDuration)
         suite.expect(ScreenshotShareDuration.saved(in: uploadDefaults) == .oneHour,
@@ -100,7 +108,7 @@ enum ScreenshotFeatureTests {
                     uploadDefaults.set(editEnabled, forKey: DefaultsKey.screenshotLastCaptureShortcutEnabled)
                     uploadDefaults.set(uploadEnabled, forKey: DefaultsKey.screenshotUploadShortcutEnabled)
                     uploadDefaults.set(sharingEnabled, forKey: DefaultsKey.screenshotSharingEnabled)
-                    let canUpload = uploadEnabled && sharingEnabled
+                    let canUpload = ScreenshotSharingSupport.isAvailable && uploadEnabled && sharingEnabled
                     suite.expect(ScreenshotSharingSupport.uploadShortcutEnabled(in: uploadDefaults) == canUpload,
                                  "uploads require both the shortcut and sharing to be enabled")
                     suite.expect(ScreenshotSharingSupport.retainsLatestCapture(in: uploadDefaults)
@@ -109,8 +117,8 @@ enum ScreenshotFeatureTests {
                     let roles = GlobalShortcutRole.activeRoles(
                         isOn: { uploadDefaults.bool(forKey: $0) },
                         isAvailable: { $0 == .screenshot })
-                    suite.expect(roles.contains(.screenshotUpload) == canUpload,
-                                 "shortcut conflict detection follows upload availability")
+                    suite.expect(roles.contains(.screenshotUpload) == (uploadEnabled && sharingEnabled),
+                                 "shortcut conflict detection follows configured upload preferences")
                 }
             }
         }
@@ -3389,8 +3397,9 @@ enum ScreenshotFeatureTests {
                 && !capturesGoToShelf(option: true, installed: true, on: false)
                 && !capturesGoToShelf(option: true, installed: false, on: true),
                "captures go to the shelf only with the option on and the shelf installed and switched on")
-        suite.expect(Defaults.registeredDefaults[DefaultsKey.screenshotSharingEnabled] as? Bool == true,
-               "temporary screenshot links preserve their existing availability by default")
+        suite.expect(Defaults.registeredDefaults[DefaultsKey.screenshotSharingEnabled] as? Bool
+                == ScreenshotSharingSupport.isAvailable,
+               "temporary screenshot links default to availability in the current app variant")
         suite.expect(Defaults.registeredDefaults[DefaultsKey.screenshotToolOrder] as? String
                 == ScreenshotSupport.Tool.defaultOrderStorage,
                "the screenshot rail ships in its useful numbered order")
@@ -3445,10 +3454,15 @@ enum ScreenshotFeatureTests {
                     developerOverride: "http://test.example")
                     == ScreenshotSharingSupport.productionEndpoint,
                "only the Developer build accepts a valid HTTPS test endpoint")
+        #if SHADOW_UTILITIES
+        suite.expect(ScreenshotSharingSupport.uploadURL(endpoint: testShareEndpoint, duration: .sixHours) == nil,
+                     "fork sharing ignores even a Developer override endpoint")
+        #else
         suite.expect(ScreenshotSharingSupport.uploadURL(endpoint: testShareEndpoint,
                                                   duration: .sixHours)?.absoluteString
                 == "https://test.example/v1/screenshots?expiresIn=21600",
                "sharing builds the fixed upload route and expiration query")
+        #endif
         let shareNow = Date(timeIntervalSince1970: 1_000)
         let shareResponse = ScreenshotShareResponse(
             id: String(repeating: "a", count: 32),

@@ -38,6 +38,14 @@ struct RecordingShareResponse: Decodable {
 }
 
 enum RecordingSharingSupport {
+    static var isAvailable: Bool {
+        #if SHADOW_UTILITIES
+        false
+        #else
+        true
+        #endif
+    }
+
     struct EncodingPlan: Equatable {
         let size: CGSize
         let frameRate: Int
@@ -63,6 +71,9 @@ enum RecordingSharingSupport {
     }
 
     static func uploadURL(endpoint: URL, duration: RecordingShareDuration) -> URL? {
+        #if SHADOW_UTILITIES
+        return nil
+        #else
         let base = endpoint.appendingPathComponent("v1", isDirectory: true)
             .appendingPathComponent("recordings", isDirectory: false)
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
@@ -71,6 +82,7 @@ enum RecordingSharingSupport {
         components.queryItems = [URLQueryItem(name: "expiresIn",
                                                value: String(duration.rawValue))]
         return components.url
+        #endif
     }
 
     static func record(response: RecordingShareResponse,

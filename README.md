@@ -1,3 +1,12 @@
+# Shadow Utilities
+
+Unofficial personal fork of Vorssaint with local T-Mobile gateway monitoring.
+Uses its own app identity, icon, signed release feed, and independent version.
+See [fork setup and updates](docs/FORK-UPDATES.md) and [T-Mobile support](docs/TMOBILE-GATEWAY.md).
+The first signed release is pending; the installed official app is not modified.
+
+The original project documentation follows for attribution and feature reference.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/logo-dark.svg">

@@ -27,14 +27,17 @@ trap cleanup EXIT
 trap 'exit 1' INT TERM HUP
 
 # Flags: --dev builds the local-only "Vorssaint (Developer)" variant (its own
-# bundle id, so it coexists with the official app); --install puts it in /Applications.
+# bundle id, so it coexists with the official app); --fork builds Shadow Utilities;
+# --install puts the selected variant in /Applications.
 DEV=0
+FORK=0
 INSTALL=0
 TEST=0
 TEST_ARGS=()
 for arg in "$@"; do
     case "$arg" in
         --dev)     DEV=1 ;;
+        --fork)    FORK=1 ;;
         --install) INSTALL=1 ;;
         --test)    TEST=1 ;;
         --test-suite=*) TEST=1; TEST_ARGS+=("--suite=${arg#*=}") ;;
@@ -42,7 +45,32 @@ for arg in "$@"; do
     esac
 done
 
-if (( DEV )); then
+if (( FORK && DEV )); then
+    echo "Use either --fork or --dev, not both" >&2
+    exit 1
+fi
+if (( FORK )); then
+    APP_NAME="Shadow Utilities"
+    EXECUTABLE="ShadowUtilities"
+    APP_BUNDLE_ID="io.github.joaovorocha.shadowutils"
+    BUILD_VARIANT_FLAGS=(-D SHADOW_UTILITIES)
+    APP_OPTIMIZATION_FLAGS=(-O)
+    BUILD_CONFIGURATION="release"
+    FORK_VERSION="$(cat Resources/Fork/version.txt)"
+    if ! [[ "$FORK_VERSION" =~ '^[0-9]+\.[0-9]+\.[0-9]+(-(beta|rc|alpha)\.[0-9]+)?$' ]]; then
+        echo "Invalid Resources/Fork/version.txt" >&2
+        exit 1
+    fi
+    if [[ -n "${SHADOW_UPDATE_TEAM_ID:-}" ]] \
+        && { ! [[ "$SHADOW_UPDATE_TEAM_ID" =~ '^[A-Z0-9]{10}$' ]] || [[ "$SHADOW_UPDATE_TEAM_ID" = 3D485NHW29 ]]; }; then
+        echo "Set SHADOW_UPDATE_TEAM_ID to your own ten-character Apple Team ID" >&2
+        exit 1
+    fi
+    if (( INSTALL )) && [[ -z "${SHADOW_UPDATE_TEAM_ID:-}" ]]; then
+        echo "A fork install requires your Developer ID signing identity and SHADOW_UPDATE_TEAM_ID" >&2
+        exit 1
+    fi
+elif (( DEV )); then
     APP_NAME="Vorssaint (Developer)"
     EXECUTABLE="VorssaintDeveloper"
     APP_BUNDLE_ID="com.vorssaint.utils.dev"
@@ -67,6 +95,14 @@ ENTITLEMENTS="Resources/Vorssaint.entitlements"
 LEGACY_IDENTITY="Vorssaint Utils Signing"
 
 developer_id_identity() {
+    if (( FORK )); then
+        # Local unsigned previews never inspect or create keychain identities.
+        [[ -n "${SHADOW_UPDATE_TEAM_ID:-}" ]] || return 0
+        security find-identity -v -p codesigning 2>/dev/null \
+            | grep 'Developer ID Application' | grep -F "($SHADOW_UPDATE_TEAM_ID)" \
+            | head -1 | sed -E 's/.*"(.*)".*/\1/' || true
+        return
+    fi
     security find-identity -v -p codesigning 2>/dev/null \
         | grep 'Developer ID Application' \
         | head -1 \
@@ -77,6 +113,7 @@ developer_id_identity() {
 # expired one fails the build with errSecInternalComponent), and -v excludes
 # every self-signed one; ask codesign itself with a throwaway copy of /bin/echo.
 legacy_identity_installed() {
+    (( FORK )) && return 1
     local probe signed=1
     # A locked keychain still lists its identities but cannot sign with them,
     # and this one is locked after every reboot; unlock it before asking.
@@ -99,7 +136,7 @@ legacy_identity_installed() {
 # up front instead of falling through to ad-hoc — setup-signing.sh is free,
 # offline and idempotent. Gating on the install rather than the variant keeps
 # this off CI, where neither ci.yml nor release.yml passes --install.
-if (( DEV || INSTALL )) && [[ -z "$(developer_id_identity)" ]] \
+if (( !FORK && (DEV || INSTALL) )) && [[ -z "$(developer_id_identity)" ]] \
     && ! legacy_identity_installed; then
     echo "▸ No signing identity installed; creating the stable local one…"
     if ! ./Tools/setup-signing.sh; then
@@ -352,6 +389,7 @@ if (( TEST )); then
         Sources/Vorssaint/Core/FanControlStrings.swift
         Sources/Vorssaint/Core/ConnectedDevicesStrings.swift
         Sources/Vorssaint/Services/FanControl/FanControlSupport.swift
+        Sources/Vorssaint/Services/FanControl/FanControlXPC.swift
         Sources/Vorssaint/Services/FanControl/FanControlResumeSupport.swift
         Sources/Vorssaint/Services/Snippets/TextSnippetSupport.swift
         Sources/Vorssaint/Services/RadialMenu/RadialMenuSupport.swift
@@ -559,7 +597,7 @@ if (( TEST )); then
     swiftc -Onone -incremental -enable-batch-mode -j "$(sysctl -n hw.logicalcpu)" \
         -module-name VorssaintTests -output-file-map "$TEST_OUTPUT_FILE_MAP" \
         -target "$TARGET" -sdk "$SDK" "${SDK_COMPAT_FLAGS[@]}" \
-        "${VM_STATISTICS_COMPAT_FLAGS[@]}" "${TEST_SOURCES[@]}" -o build/metrics-tests
+        "${VM_STATISTICS_COMPAT_FLAGS[@]}" "${BUILD_VARIANT_FLAGS[@]}" "${TEST_SOURCES[@]}" -o build/metrics-tests
     test_status=0
     ./build/metrics-tests "${TEST_ARGS[@]}" || test_status=$?
     if (( ${#TEST_ARGS} == 0 )); then
@@ -616,12 +654,18 @@ swiftc -O -target "$TARGET" -sdk "$SDK" "${SDK_COMPAT_FLAGS[@]}" -emit-library \
     -o "build/$NOW_PLAYING_ADAPTER"
 
 echo "▸ Generating app icon…"
-swift Tools/MakeIcon.swift build/AppIcon.iconset
+if (( FORK )); then
+    swift Tools/MakeForkIcon.swift build/AppIcon.iconset
+else
+    swift Tools/MakeIcon.swift build/AppIcon.iconset
+fi
 xattr -c -r build/AppIcon.iconset build/AppIcon.icns build/MenuBarIcon.png build/MenuBarIcon@2x.png build/BrandMark.png 2>/dev/null || true
 ACTOOL_BIN="$(xcrun --find actool 2>/dev/null || true)"
 ICON_TMP="$(mktemp -d)"
 ADAPTIVE_SKIP=""
-if [[ -z "$ACTOOL_BIN" ]]; then
+if (( FORK )); then
+    ADAPTIVE_SKIP="fork uses its own AppIcon.icns"
+elif [[ -z "$ACTOOL_BIN" ]]; then
     ADAPTIVE_SKIP="actool not found (adaptive icons need Xcode 26+)"
 else
     echo "▸ Compiling adaptive icon catalog…"
@@ -665,7 +709,7 @@ cp CHANGELOG.md "$STAGE/Contents/Resources/CHANGELOG.md"
 for lproj in Resources/*.lproj(N); do
     cp -R "$lproj" "$STAGE/Contents/Resources/"
 done
-if (( DEV )); then
+if (( DEV || FORK )); then
     # A distinct identity so the Developer build installs and runs next to the
     # official app, with its own permissions, preferences and login item.
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $APP_BUNDLE_ID" "$STAGE/Contents/Info.plist"
@@ -677,13 +721,28 @@ if (( DEV )); then
     /usr/libexec/PlistBuddy -c "Set :BundleProgram Contents/Library/LaunchServices/$FAN_HELPER_ID" "$FAN_PLIST"
     /usr/libexec/PlistBuddy -c "Delete :MachServices:com.vorssaint.utils.fan-control" "$FAN_PLIST"
     /usr/libexec/PlistBuddy -c "Add :MachServices:$FAN_HELPER_ID bool true" "$FAN_PLIST"
+fi
+if (( FORK )); then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $FORK_VERSION" "$STAGE/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1" "$STAGE/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :ShadowUpdateTeamID string '${SHADOW_UPDATE_TEAM_ID:-}'" "$STAGE/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :ShadowUpstreamVersion string '$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Resources/Info.plist)'" "$STAGE/Contents/Info.plist"
+    # Rebrand bundled permission descriptions without changing upstream resources.
+    /usr/bin/sed -i '' 's/Vorssaint/Shadow Utilities/g' "$STAGE/Contents/Info.plist"
+    for localized_info in "$STAGE"/Contents/Resources/*.lproj/InfoPlist.strings(N); do
+        /usr/bin/sed -i '' 's/Vorssaint/Shadow Utilities/g' "$localized_info"
+    done
+    cp LICENSE "$STAGE/Contents/Resources/LICENSE"
+    cp Resources/Fork/NOTICE.txt "$STAGE/Contents/Resources/NOTICE.txt"
+fi
+if (( DEV || FORK )); then
     # Stamp the source commit + build time so the running dev app shows (in About)
     # exactly which code it was compiled from. Lets you verify it matches HEAD before
-    # testing, instead of unknowingly running a stale build. Dev-only; never shipped.
+    # testing. Personal fork releases also retain their source checkpoint.
     SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
     [[ -n "$(git status --porcelain 2>/dev/null)" ]] && SHA="$SHA-dirty"
     /usr/libexec/PlistBuddy -c "Add :VorssaintBuildCommit string '$SHA · $(date '+%Y-%m-%d %H:%M')'" "$STAGE/Contents/Info.plist"
-    echo "  stamped dev build: $SHA"
+    echo "  stamped source: $SHA"
 fi
 FAN_HELPER_VERSION="$(
     export LC_ALL=C
@@ -726,6 +785,10 @@ xattr -c -r "$STAGE" 2>/dev/null || true
 #      designated requirement across their local builds.
 #   3. Ad-hoc — fresh clone with no identity at all.
 DEVID="$(developer_id_identity)"
+if (( FORK )) && [[ -n "${SHADOW_UPDATE_TEAM_ID:-}" && -z "$DEVID" ]]; then
+    echo "Your Developer ID Application identity is unavailable; refusing a signed fork build" >&2
+    exit 1
+fi
 codesign_app() {
     local target="$1"
     if [[ -n "$DEVID" ]]; then
@@ -774,6 +837,8 @@ sign_bundle() {
         echo "  signing with Developer ID (hardened runtime): $DEVID"
     elif legacy_identity_installed; then
         echo "  signing with legacy self-signed identity: $LEGACY_IDENTITY"
+    elif (( FORK )); then
+        echo "  signing local preview ad-hoc; signed fork releases require your Developer ID"
     else
         echo "  signing ad-hoc (no identity installed — run Tools/setup-signing.sh)"
     fi
@@ -803,6 +868,10 @@ sign_installed_bundle() {
 }
 
 sign_bundle "$STAGE"
+if (( FORK )) && [[ -n "${SHADOW_UPDATE_TEAM_ID:-}" ]]; then
+    codesign --verify --deep --strict \
+        -R="identifier \"$APP_BUNDLE_ID\" and anchor apple generic and certificate leaf[subject.OU] = \"$SHADOW_UPDATE_TEAM_ID\"" "$STAGE"
+fi
 
 process_is_running() {
     local proc="$1"
@@ -883,7 +952,7 @@ if (( INSTALL )); then
     stop_process "$EXECUTABLE"
     # Only an official install replaces the pre-rename official apps. The
     # Developer variant must coexist with them just as it does with Vorssaint.
-    if (( ! DEV )); then
+    if (( !DEV && !FORK )); then
         for legacy in "Vorss:Vorss" "Vorssaint Utils:VorssaintUtils"; do
             name="${legacy%%:*}"; proc="${legacy##*:}"
             if [[ -d "/Applications/$name.app" ]]; then

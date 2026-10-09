@@ -762,6 +762,9 @@ struct AboutSettings: View {
                     appDelegate()?.showUpdateHighlights(isReview: true)
                 }
                 Link(l10n.s.viewOnGitHub, destination: AppInfo.repositoryURL)
+                #if SHADOW_UTILITIES
+                Link(FeatureStrings.feedback(l10n.language).sectionTitle, destination: AppInfo.discordURL)
+                #endif
             }
             Text(AppInfo.copyright)
                 .font(.caption2)
@@ -922,6 +925,22 @@ struct SupportSettings: View {
     }
 
     var body: some View {
+        #if SHADOW_UTILITIES
+        ScrollView {
+            VStack(spacing: 18) {
+                BrandBadge(size: 76)
+                Text(AppInfo.name)
+                    .font(.title2.bold())
+                Link(l10n.s.viewOnGitHub, destination: AppInfo.repositoryURL)
+                    .buttonStyle(.borderedProminent)
+                Link(FeatureStrings.feedback(l10n.language).sectionTitle, destination: AppInfo.discordURL)
+                    .buttonStyle(.bordered)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 26)
+        }
+        #else
         ScrollView {
             VStack(spacing: 18) {
                 ZStack {
@@ -1026,6 +1045,7 @@ struct SupportSettings: View {
             .padding(.horizontal, 28)
             .padding(.vertical, 26)
         }
+        #endif
     }
 
     private var communityActions: some View {

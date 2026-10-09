@@ -8,6 +8,22 @@ import Foundation
 /// Semantic Versioning 2.0.0, handling stable and pre-release (beta, rc, alpha) channels.
 enum UpdateServiceSupport {
 
+    /// A fork update starts only at its own versioned GitHub release asset.
+    /// URLSession may follow GitHub's normal redirect to its asset CDN afterward.
+    static func isForkReleaseAsset(name: String, downloadURL: URL, tagName: String) -> Bool {
+        guard tagName.hasPrefix("v") else { return false }
+        let version = String(tagName.dropFirst())
+        let semanticVersion = #"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\z"#
+        guard version.range(of: semanticVersion, options: .regularExpression) != nil else { return false }
+
+        let expectedName = "ShadowUtilities-\(version).dmg"
+        guard name == expectedName else { return false }
+        let expectedURL = "https://github.com/joaovorocha/vorssaint-utils/releases/download/\(tagName)/\(expectedName)"
+        // Exact equality also rejects credentials, ports, query/fragment data,
+        // percent-encoded alternatives and additional or substituted path segments.
+        return downloadURL.absoluteString == expectedURL
+    }
+
     static func sha256Matches(_ data: Data, expectedHex: String) -> Bool {
         guard expectedHex.utf8.count == SHA256.byteCount * 2 else { return false }
         let actual = SHA256.hash(data: data)
