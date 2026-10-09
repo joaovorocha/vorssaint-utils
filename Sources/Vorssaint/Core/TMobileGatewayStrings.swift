@@ -212,7 +212,7 @@ private extension TMobileGatewayStrings {
         configure: "Configurer la passerelle",
         save: "Enregistrer l’adresse",
         gatewayAddress: "Adresse de la passerelle",
-        addressHelp: "Utilisez une adresse IPv4 privée sur ce réseau local (par défaut : http://192.168.12.1).",
+        addressHelp: "Utilisez une adresse IPv4 privée sur ce réseau local (par défaut\u{00A0}: http://192.168.12.1).",
         loading: "Chargement de l’état de la passerelle…",
         unavailable: "Passerelle indisponible",
         invalidAddress: "Saisissez une adresse IPv4 privée pour la passerelle.",
