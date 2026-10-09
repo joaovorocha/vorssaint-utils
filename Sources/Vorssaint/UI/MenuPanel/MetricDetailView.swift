@@ -165,6 +165,9 @@ struct MetricDetailView: View {
             summaryCard
             detailCard
             if kind == .network {
+                if MenuBarMetric.enabled(in: .standard).contains(where: { $0.tMobileReading != nil }) {
+                    TMobileGatewayBlock(isVisible: .constant(true), editing: false).panelCard()
+                }
                 speedTestCard
             }
             if kind.processKind != nil {

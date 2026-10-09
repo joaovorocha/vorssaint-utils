@@ -9,6 +9,11 @@ enum TMobileGatewayIntegrationTests {
         suite.expect(Defaults.registeredDefaults[DefaultsKey.monitorNetTMobile] as? Bool == false,
                      "gateway polling requires an explicit opt-in on each Mac")
         let exportedKeys = SettingsBackupSupport.exportKeys()
+        let networkConsentKeys = ["menuBarTMobileLTE", "menuBarTMobile5G", "menuBarTMobileLTEBands", "menuBarTMobile5GBands",
+                                  "menuBarTMobileLTERSRP", "menuBarTMobile5GRSRP", "menuBarTMobileLTERSINR", "menuBarTMobile5GSINR",
+                                  "menuBarTMobileLTERSRQ", "menuBarTMobile5GRSRQ", "menuBarTMobileLTERSSI", "menuBarTMobile5GRSSI", "tMobileHistoryRecording"]
+        suite.expect(networkConsentKeys.allSatisfy { !exportedKeys.contains($0) && SettingsBackupSupport.machineStateKeys.contains($0) },
+                     "portable backups cannot enable background radio polling or local location history")
         suite.expect(!exportedKeys.contains(DefaultsKey.monitorNetTMobile)
                      && !exportedKeys.contains(DefaultsKey.tMobileGatewayAddress),
                      "restoring a backup cannot enable requests to another network's gateway")

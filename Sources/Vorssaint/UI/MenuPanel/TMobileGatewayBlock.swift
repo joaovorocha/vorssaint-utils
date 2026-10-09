@@ -3,15 +3,17 @@
 
 import SwiftUI
 
-/// View-owned polling stops when the panel closes or this block is hidden.
+/// Shares a single reader with explicitly pinned metrics and local history.
 struct TMobileGatewayBlock: View {
     @Binding var isVisible: Bool
     var editing: Bool
-    @StateObject private var service = TMobileGatewayService()
+    @ObservedObject private var service = TMobileGatewayMonitor.shared.service
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(DefaultsKey.tMobileGatewayAddress) private var address = TMobileGatewayService.defaultBaseURL
     @State private var configuring = false
     @State private var lastUpdated: Date?
+    @State private var showingHistory = false
+    @State private var showingTips = false
 
     private var strings: TMobileGatewayStrings { .localized(l10n.language) }
 
@@ -41,6 +43,11 @@ struct TMobileGatewayBlock: View {
                     } else {
                         status
                     }
+                    HStack {
+                        Button("Signal guide & tips") { showingTips = true }
+                        Spacer(minLength: 0)
+                        Button("History & towers") { showingHistory = true }
+                    }.buttonStyle(.bordered).controlSize(.small)
                 }
             }
         }
@@ -50,15 +57,13 @@ struct TMobileGatewayBlock: View {
         .onReceive(service.$snapshot) { snapshot in
             lastUpdated = snapshot == nil ? nil : Date()
         }
-        .onDisappear { service.cancel() }
+        .onDisappear { TMobileGatewayMonitor.shared.setPanelVisible(false) }
+        .sheet(isPresented: $showingHistory) { TMobileGatewayHistoryView() }
+        .sheet(isPresented: $showingTips) { TMobileGatewayTipsView(snapshot: service.snapshot) }
     }
 
     private func updatePolling() {
-        if isVisible && AppFeature.monitorNetwork.isAvailable {
-            service.start(baseURL: address)
-        } else {
-            service.cancel()
-        }
+        TMobileGatewayMonitor.shared.setPanelVisible(isVisible)
     }
 
     @ViewBuilder private var status: some View {
@@ -151,7 +156,7 @@ struct TMobileGatewayBlock: View {
                 Text(radio.bands.joined(separator: ", ")).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 if let bars = radio.bars {
-                    Label("\(bars)/5", systemImage: "chart.bar.fill")
+                    TMobileSignalBars(bars: bars, radio: title)
                 }
             }
             HStack(spacing: 12) {
@@ -163,9 +168,27 @@ struct TMobileGatewayBlock: View {
                 metric("RSSI", radio.rssi, unit: "dBm")
             }
             .foregroundStyle(.secondary)
+            DisclosureGroup("Radio details") {
+                VStack(alignment: .leading, spacing: 3) {
+                    detail("Cell ID", radio.cellID.map(String.init))
+                    detail("Antenna", radio.antenna)
+                    detail("Bandwidth", radio.bandwidthMHz.map { "\($0.formatted()) MHz" })
+                    detail("Channel", radio.channel.map(String.init))
+                    detail("PCI", radio.physicalCellID.map(String.init))
+                    detail("TAC", radio.trackingAreaCode.map(String.init))
+                    detail("CQI", radio.cqi.map(String.init))
+                    detail("gNB ID", radio.gNodeBID.map(String.init))
+                    Text("Not reported fields remain unavailable. Cell IDs do not provide tower coordinates.")
+                        .font(.system(size: 9)).foregroundStyle(.tertiary)
+                }.textSelection(.enabled)
+            }
         }
         .font(.system(size: 10.5))
         .monospacedDigit()
+    }
+
+    private func detail(_ name: String, _ value: String?) -> some View {
+        HStack { Text(name).foregroundStyle(.secondary); Spacer(minLength: 0); Text(value ?? "Not reported") }
     }
 
     private func metric(_ title: String, _ value: Double?, unit: String) -> some View {
@@ -183,6 +206,7 @@ struct TMobileGatewayAddressEditor: View {
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(DefaultsKey.tMobileGatewayAddress) private var address = TMobileGatewayService.defaultBaseURL
     @State private var draft = ""
+    @State private var history = false
     @Environment(\.dismiss) private var dismiss
 
     private var strings: TMobileGatewayStrings { .localized(l10n.language) }
@@ -204,15 +228,82 @@ struct TMobileGatewayAddressEditor: View {
             }
             Button(strings.save) { save() }
                 .disabled(!valid)
+            Divider()
+            Text("Pin LTE / 5G signal, bands and individual numbers in Settings → Monitor → In the menu bar.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Button("Local history & tower map…") { history = true }
         }
         .padding(16)
         .frame(width: 300)
         .onAppear { draft = address }
+        .sheet(isPresented: $history) { TMobileGatewayHistoryView() }
     }
 
     private func save() {
         guard let url = TMobileGatewaySupport.privateLANBaseURL(draft) else { return }
         address = url.absoluteString
         dismiss()
+    }
+}
+
+private struct TMobileSignalBars: View {
+    let bars: Int
+    let radio: String
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 2) {
+            ForEach(1...5, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 1).fill(index <= bars ? Color.primary : Color.secondary.opacity(0.25))
+                    .frame(width: 3, height: CGFloat(index * 2 + 3))
+            }
+            Text("\(bars)/5").padding(.leading, 3)
+        }.accessibilityElement(children: .ignore).accessibilityLabel("\(radio) signal, \(bars) of 5 bars")
+    }
+}
+
+private struct TMobileGatewayTipsView: View {
+    let snapshot: TMobileGatewaySnapshot?
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack { Text("Cellular signal guide").font(.title2.bold()); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Bars are reported by your gateway. The ratings below are approximate placement guidance, not T-Mobile ratings or a speed prediction.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    ForEach(TMobileSignalMetric.allCases, id: \.self) { metric in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("\(metric.label) · \(metric.unit)").font(.headline)
+                            Text(metric.explanation)
+                            HStack(spacing: 20) {
+                                guideReading("LTE", radio: snapshot?.lte, metric: metric)
+                                guideReading("5G", radio: snapshot?.fiveG, metric: metric)
+                            }.font(.callout).monospacedDigit()
+                        }
+                    }
+                    if let snapshot {
+                        Divider()
+                        Text("Tips for these readings").font(.headline)
+                        ForEach(Array(TMobileGatewayDiagnostics.tips(for: snapshot).enumerated()), id: \.offset) { index, tip in Text("\(index + 1). \(tip)") }
+                        ForEach(Array(Set((snapshot.lte?.bands ?? []) + (snapshot.fiveG?.bands ?? []))).sorted(), id: \.self) { band in
+                            if let description = TMobileGatewayDiagnostics.bandDescription(band) { Text("\(band): \(description)") }
+                        }
+                        if let apn = snapshot.apn { Text("Reported APN: \(apn)").font(.caption) }
+                    }
+                    Divider()
+                    Text("Band choices in the menu bar select what you see. The gateway chooses the connected band; this app does not change it. Monthly account usage is not provided by this local status endpoint.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Link("T-Mobile network and band information", destination: URL(string: "https://www.t-mobile.com/support/coverage/t-mobile-network")!)
+                    Link("T-Mobile gateway placement help", destination: URL(string: "https://www.t-mobile.com/support/home-internet/t-mobile-gateway/network-speed")!)
+                    Link("T-Mobile coverage map", destination: URL(string: "https://www.t-mobile.com/coverage/coverage-map")!)
+                }.textSelection(.enabled).padding(.trailing, 8)
+            }
+        }.padding(20).frame(width: 590, height: 660)
+    }
+    private func guideReading(_ label: String, radio: TMobileRadioSignal?, metric: TMobileSignalMetric) -> some View {
+        let value: Double? = {
+            switch metric { case .rsrp: return radio?.rsrp; case .rsrq: return radio?.rsrq; case .rssi: return radio?.rssi; case .sinr: return radio?.sinr }
+        }()
+        let quality = TMobileGatewayDiagnostics.quality(for: value, metric: metric)
+        return Text("\(label): \(value.map { "\($0.formatted()) \(metric.unit)" } ?? "Not reported")\(quality == .unknown ? "" : " · " + quality.label)")
     }
 }
