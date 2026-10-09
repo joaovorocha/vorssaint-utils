@@ -18,7 +18,7 @@ enum TMobileGatewayHistoryTests {
     }
 
     @MainActor private static func persistence(_ suite: TestSuite) {
-        let domain = "TMobileHistoryTests.\(UUID().uuidString)"
+        let domain = "com.vorssaint.tests.tmobile-history.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: domain)!
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(domain, isDirectory: true)
         defer { defaults.removePersistentDomain(forName: domain); try? FileManager.default.removeItem(at: folder) }
