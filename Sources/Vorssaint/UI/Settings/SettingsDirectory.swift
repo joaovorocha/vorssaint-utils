@@ -217,7 +217,7 @@ enum SettingsDirectory {
                                        featureKeywords: [
                                         (.monitorMemory, [s.monitorMemoryPressureDot]),
                                         (.monitorNetwork, [FeatureStrings.monitorLayout(language).networkSpeedUnit,
-                                                           "T-Mobile gateway", "5G signal", "LTE signal", "n41 bands", "Tower map", "Signal history"]),
+                                                           "T-Mobile gateway", "5G signal", "LTE signal", "n41 bands", "Tower map", "Signal history", "Wi-Fi settings", "SSID", "Guest network", "Router settings"]),
                                         (.fanControl, [FeatureStrings.fanControl(language).menuBarTitle]),
                                        ]),
             ]),

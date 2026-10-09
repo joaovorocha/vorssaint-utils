@@ -48,6 +48,8 @@ struct TMobileGatewayBlock: View {
                         Spacer(minLength: 0)
                         Button("History & towers") { showingHistory = true }
                     }.buttonStyle(.bordered).controlSize(.small)
+                    Button("Wi-Fi & router settings…") { TMobileWiFiSettingsWindow.shared.show() }
+                        .buttonStyle(.bordered).controlSize(.small)
                 }
             }
         }
@@ -232,6 +234,7 @@ struct TMobileGatewayAddressEditor: View {
             Text("Pin LTE / 5G signal, bands and individual numbers in Settings → Monitor → In the menu bar.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button("Local history & tower map…") { history = true }
+            Button("Wi-Fi & router settings…") { TMobileWiFiSettingsWindow.shared.show() }
         }
         .padding(16)
         .frame(width: 300)
