@@ -379,6 +379,20 @@ enum DefaultsKey {
     static let menuBarBatteryTemperature = "menuBarBatteryTemperature"
     static let menuBarTemperature = "menuBarTemperature" // legacy Developer key for the old generic temperature metric
     static let menuBarNetwork = "menuBarNetwork"
+    static let menuBarTMobileLTE = "menuBarTMobileLTE"
+    static let menuBarTMobile5G = "menuBarTMobile5G"
+    static let menuBarTMobileLTEBands = "menuBarTMobileLTEBands"
+    static let menuBarTMobile5GBands = "menuBarTMobile5GBands"
+    static let menuBarTMobileLTERSRP = "menuBarTMobileLTERSRP"
+    static let menuBarTMobile5GRSRP = "menuBarTMobile5GRSRP"
+    static let menuBarTMobileLTERSINR = "menuBarTMobileLTERSINR"
+    static let menuBarTMobile5GSINR = "menuBarTMobile5GSINR"
+    static let menuBarTMobileLTERSRQ = "menuBarTMobileLTERSRQ"
+    static let menuBarTMobile5GRSRQ = "menuBarTMobile5GRSRQ"
+    static let menuBarTMobileLTERSSI = "menuBarTMobileLTERSSI"
+    static let menuBarTMobile5GRSSI = "menuBarTMobile5GRSSI"
+    static let tMobileLTEMenuBarSignalStyle = "tMobileLTEMenuBarSignalStyle" // bars | value
+    static let tMobile5GMenuBarSignalStyle = "tMobile5GMenuBarSignalStyle" // bars | value
     static let menuBarDiskUsage = "menuBarDiskUsage"
     static let menuBarDiskActivity = "menuBarDiskActivity"
     static let menuBarBattery = "menuBarBattery"
@@ -1162,7 +1176,8 @@ enum Defaults {
         "gpu", "gpuTemperature",
         "memory",
         "battery", "batteryTime", "batteryTemperature", "peripheralBattery",
-        "network", "diskUsage", "diskActivity", "connectedDevices", "power", "fanSpeed",
+        "network", "tMobileLTE", "tMobile5G", "tMobileLTEBands", "tMobile5GBands", "tMobileLTERSRP", "tMobile5GRSRP", "tMobileLTERSINR", "tMobile5GSINR", "tMobileLTERSRQ", "tMobile5GRSRQ", "tMobileLTERSSI", "tMobile5GRSSI",
+        "diskUsage", "diskActivity", "connectedDevices", "power", "fanSpeed",
     ]
     static let allowedMenuBarLabelStyles = ["compact", "classic"]
     static let allowedMenuBarMemoryStyles = ["dot", "percent", "both"]
@@ -1602,6 +1617,20 @@ enum Defaults {
         DefaultsKey.menuBarGPUTemperature: false,
         DefaultsKey.menuBarBatteryTemperature: false,
         DefaultsKey.menuBarBatteryTime: false,
+        DefaultsKey.menuBarTMobileLTE: false,
+        DefaultsKey.menuBarTMobile5G: false,
+        DefaultsKey.menuBarTMobileLTEBands: false,
+        DefaultsKey.menuBarTMobile5GBands: false,
+        DefaultsKey.menuBarTMobileLTERSRP: false,
+        DefaultsKey.menuBarTMobile5GRSRP: false,
+        DefaultsKey.menuBarTMobileLTERSINR: false,
+        DefaultsKey.menuBarTMobile5GSINR: false,
+        DefaultsKey.menuBarTMobileLTERSRQ: false,
+        DefaultsKey.menuBarTMobile5GRSRQ: false,
+        DefaultsKey.menuBarTMobileLTERSSI: false,
+        DefaultsKey.menuBarTMobile5GRSSI: false,
+        DefaultsKey.tMobileLTEMenuBarSignalStyle: "bars",
+        DefaultsKey.tMobile5GMenuBarSignalStyle: "bars",
         DefaultsKey.menuBarDiskUsage: false,
         DefaultsKey.menuBarDiskActivity: false,
         DefaultsKey.menuBarPeripheralBattery: false,

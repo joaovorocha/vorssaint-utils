@@ -383,10 +383,13 @@ private struct MenuBarMetricTile: View {
     @AppStorage(DefaultsKey.menuBarMemoryStyle) private var memoryStyle = "percent"
     @AppStorage(DefaultsKey.menuBarNetworkUploadFirst) private var uploadFirst = false
     @AppStorage(DiskMenuBarStyle.defaultsKey) private var diskStyle = DiskMenuBarStyle.percent
+    @AppStorage private var gatewaySignalStyle: String
 
     init(metric: MenuBarMetric) {
         self.metric = metric
         _shown = AppStorage(wrappedValue: false, metric.defaultsKey)
+        _gatewaySignalStyle = AppStorage(wrappedValue: "bars",
+            metric.tMobileReading?.signalStyleDefaultsKey ?? DefaultsKey.tMobileLTEMenuBarSignalStyle)
     }
 
     var body: some View {
@@ -396,6 +399,9 @@ private struct MenuBarMetricTile: View {
 
     /// What the reading's option makes the menu bar show, in its own terms.
     private var optionsSummary: String {
+        if metric.tMobileReading?.isSignal == true {
+            return TMobileGatewayMenuBarSupport.signalStyle(gatewaySignalStyle) == "bars" ? "Bars" : "Number"
+        }
         switch metric {
         case .memory:
             return Defaults.sanitizedMenuBarMemoryStyle(memoryStyle) != "percent"
@@ -412,6 +418,12 @@ private struct MenuBarMetricTile: View {
     }
 
     private var options: AnyView? {
+        if metric.tMobileReading?.isSignal == true {
+            return AnyView(Picker("Cellular signal", selection: $gatewaySignalStyle) {
+                Text("Bars").tag("bars")
+                Text("Number (out of 5)").tag("value")
+            }.pickerStyle(.menu))
+        }
         switch metric {
         case .memory:
             return AnyView(MonitorTokenOption(

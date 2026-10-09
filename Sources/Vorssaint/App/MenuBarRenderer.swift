@@ -6,6 +6,7 @@ import AppKit
 /// A live reading the user can pin next to the menu bar icon.
 enum MenuBarMetric: String, CaseIterable, Identifiable {
     case cpu, gpu, memory, cpuTemperature, gpuTemperature, batteryTemperature, network, diskUsage, diskActivity, battery, batteryTime, peripheralBattery, power, fanSpeed, connectedDevices
+    case tMobileLTE, tMobile5G, tMobileLTEBands, tMobile5GBands, tMobileLTERSRP, tMobile5GRSRP, tMobileLTERSINR, tMobile5GSINR, tMobileLTERSRQ, tMobile5GRSRQ, tMobileLTERSSI, tMobile5GRSSI
 
     var id: String { rawValue }
 
@@ -18,6 +19,18 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
         case .gpuTemperature: return DefaultsKey.menuBarGPUTemperature
         case .batteryTemperature: return DefaultsKey.menuBarBatteryTemperature
         case .network: return DefaultsKey.menuBarNetwork
+        case .tMobileLTE: return DefaultsKey.menuBarTMobileLTE
+        case .tMobile5G: return DefaultsKey.menuBarTMobile5G
+        case .tMobileLTEBands: return DefaultsKey.menuBarTMobileLTEBands
+        case .tMobile5GBands: return DefaultsKey.menuBarTMobile5GBands
+        case .tMobileLTERSRP: return DefaultsKey.menuBarTMobileLTERSRP
+        case .tMobile5GRSRP: return DefaultsKey.menuBarTMobile5GRSRP
+        case .tMobileLTERSINR: return DefaultsKey.menuBarTMobileLTERSINR
+        case .tMobile5GSINR: return DefaultsKey.menuBarTMobile5GSINR
+        case .tMobileLTERSRQ: return DefaultsKey.menuBarTMobileLTERSRQ
+        case .tMobile5GRSRQ: return DefaultsKey.menuBarTMobile5GRSRQ
+        case .tMobileLTERSSI: return DefaultsKey.menuBarTMobileLTERSSI
+        case .tMobile5GRSSI: return DefaultsKey.menuBarTMobile5GRSSI
         case .diskUsage: return DefaultsKey.menuBarDiskUsage
         case .diskActivity: return DefaultsKey.menuBarDiskActivity
         case .battery: return DefaultsKey.menuBarBattery
@@ -38,6 +51,7 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
         case .gpuTemperature: return "rectangle.connected.to.line.below"
         case .batteryTemperature: return "battery.100"
         case .network: return "network"
+        case .tMobileLTE, .tMobile5G, .tMobileLTEBands, .tMobile5GBands, .tMobileLTERSRP, .tMobile5GRSRP, .tMobileLTERSINR, .tMobile5GSINR, .tMobileLTERSRQ, .tMobile5GRSRQ, .tMobileLTERSSI, .tMobile5GRSSI: return "antenna.radiowaves.left.and.right"
         case .diskUsage: return "internaldrive"
         case .diskActivity: return "internaldrive.fill"
         case .battery: return "battery.100"
@@ -50,6 +64,7 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
     }
 
     func title(_ strings: Strings) -> String {
+        if let tMobileReading { return tMobileReading.title }
         switch self {
         case .cpu: return strings.monitorShowCPU
         case .gpu: return strings.monitorShowGPU
@@ -66,6 +81,7 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
         case .connectedDevices: return FeatureStrings.connectedDevices(L10n.shared.language).title
         case .power: return strings.monitorShowPowerLabel
         case .fanSpeed: return FeatureStrings.fanControl(L10n.shared.language).menuBarTitle
+        case .tMobileLTE, .tMobile5G, .tMobileLTEBands, .tMobile5GBands, .tMobileLTERSRP, .tMobile5GRSRP, .tMobileLTERSINR, .tMobile5GSINR, .tMobileLTERSRQ, .tMobile5GRSRQ, .tMobileLTERSSI, .tMobile5GRSSI: return "T-Mobile"
         }
     }
 
@@ -74,7 +90,8 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
         .gpu, .gpuTemperature,
         .memory,
         .battery, .batteryTime, .batteryTemperature, .peripheralBattery,
-        .network, .diskUsage, .diskActivity, .connectedDevices, .power, .fanSpeed,
+        .network, .tMobileLTE, .tMobile5G, .tMobileLTEBands, .tMobile5GBands, .tMobileLTERSRP, .tMobile5GRSRP, .tMobileLTERSINR, .tMobile5GSINR, .tMobileLTERSRQ, .tMobile5GRSRQ, .tMobileLTERSSI, .tMobile5GRSSI,
+        .diskUsage, .diskActivity, .connectedDevices, .power, .fanSpeed,
     ]
 
     static func order(in defaults: UserDefaults) -> [MenuBarMetric] {
@@ -95,11 +112,29 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
         case .cpu, .cpuTemperature: return .monitorCPU
         case .gpu, .gpuTemperature: return .monitorGPU
         case .memory: return .monitorMemory
-        case .network: return .monitorNetwork
+        case .network, .tMobileLTE, .tMobile5G, .tMobileLTEBands, .tMobile5GBands, .tMobileLTERSRP, .tMobile5GRSRP, .tMobileLTERSINR, .tMobile5GSINR, .tMobileLTERSRQ, .tMobile5GRSRQ, .tMobileLTERSSI, .tMobile5GRSSI: return .monitorNetwork
         case .diskUsage, .diskActivity: return .monitorDisk
         case .connectedDevices: return .connectedDevices
         case .battery, .batteryTime, .batteryTemperature, .peripheralBattery, .power: return .monitorPower
         case .fanSpeed: return .fanControl
+        }
+    }
+
+    var tMobileReading: TMobileGatewayMenuBarReading? {
+        switch self {
+        case .tMobileLTE: return .lteSignal
+        case .tMobile5G: return .fiveGSignal
+        case .tMobileLTEBands: return .lteBands
+        case .tMobile5GBands: return .fiveGBands
+        case .tMobileLTERSRP: return .lteRSRP
+        case .tMobile5GRSRP: return .fiveGRSRP
+        case .tMobileLTERSINR: return .lteSINR
+        case .tMobile5GSINR: return .fiveGSINR
+        case .tMobileLTERSRQ: return .lteRSRQ
+        case .tMobile5GRSRQ: return .fiveGRSRQ
+        case .tMobileLTERSSI: return .lteRSSI
+        case .tMobile5GRSSI: return .fiveGRSSI
+        default: return nil
         }
     }
 
@@ -251,16 +286,18 @@ enum MenuBarRenderer {
 
     static func lines(for snapshot: SystemSnapshot,
                       metrics: [MenuBarMetric],
-                      allowStacked: Bool = true) -> [[MenuBarSegment]] {
-        let denseSegments = blockSegments(for: snapshot, metrics: metrics, style: .dense)
+                      allowStacked: Bool = true,
+                      gatewaySnapshot: TMobileGatewaySnapshot? = nil) -> [[MenuBarSegment]] {
+        let denseSegments = blockSegments(for: snapshot, metrics: metrics, style: .dense, gatewaySnapshot: gatewaySnapshot)
         return denseSegments.isEmpty ? [] : [denseSegments]
     }
 
     static func segments(for snapshot: SystemSnapshot,
                          metrics: [MenuBarMetric],
-                         allowStacked: Bool = true) -> [MenuBarSegment] {
+                         allowStacked: Bool = true,
+                         gatewaySnapshot: TMobileGatewaySnapshot? = nil) -> [MenuBarSegment] {
         var segments: [MenuBarSegment] = []
-        for (index, line) in lines(for: snapshot, metrics: metrics, allowStacked: allowStacked).enumerated() {
+        for (index, line) in lines(for: snapshot, metrics: metrics, allowStacked: allowStacked, gatewaySnapshot: gatewaySnapshot).enumerated() {
             if index > 0 { segments.append(.text("\n")) }
             segments.append(contentsOf: line)
         }
@@ -340,7 +377,8 @@ enum MenuBarRenderer {
 
     private static func blockSegments(for snapshot: SystemSnapshot,
                                       metrics: [MenuBarMetric],
-                                      style: MenuBarBlockStyle) -> [MenuBarSegment] {
+                                      style: MenuBarBlockStyle,
+                                      gatewaySnapshot: TMobileGatewaySnapshot? = nil) -> [MenuBarSegment] {
         var groups: [[MenuBarSegment]] = []
         let appearance = MenuBarMetricAppearance.current
         let usesBars = appearance == .bars
@@ -469,6 +507,13 @@ enum MenuBarRenderer {
                                                 minimumValue: memoryStyle.showsPercent ? "100%" : "",
                                                 style: style,
                                                 pressure: memoryStyle.showsDot ? snapshot.memoryPressure : nil)])
+                }
+            case .tMobileLTE, .tMobile5G, .tMobileLTEBands, .tMobile5GBands, .tMobileLTERSRP, .tMobile5GRSRP, .tMobileLTERSINR, .tMobile5GSINR, .tMobileLTERSRQ, .tMobile5GRSRQ, .tMobileLTERSSI, .tMobile5GRSSI:
+                if let reading = metric.tMobileReading {
+                    let display = TMobileGatewayMenuBarSupport.display(reading, snapshot: gatewaySnapshot,
+                        signalStyle: UserDefaults.standard.string(forKey: reading.signalStyleDefaultsKey) ?? "bars")
+                    groups.append([.metricBlock(label: display.label, value: display.value,
+                                                minimumValue: display.minimumValue, style: style, pressure: nil)])
                 }
             case .network:
                 if let down = snapshot.netDownBytesPerSec, let up = snapshot.netUpBytesPerSec {
@@ -665,6 +710,8 @@ enum MenuBarRenderer {
             return 11      // symbol + " CPU 999°" / " GPU 999°" / " BAT 999°"
         case (_, .peripheralBattery):
             return 12      // symbol + " KBD 100%+9"
+        case (_, .tMobileLTE), (_, .tMobile5G), (_, .tMobileLTEBands), (_, .tMobile5GBands), (_, .tMobileLTERSRP), (_, .tMobile5GRSRP), (_, .tMobileLTERSINR), (_, .tMobile5GSINR), (_, .tMobileLTERSRQ), (_, .tMobile5GRSRQ), (_, .tMobileLTERSSI), (_, .tMobile5GRSSI):
+            return 15
         case (_, .network):
             return 15      // down symbol + 999Kb/1023K + up symbol + 999Kb/1023K
         case (_, .diskUsage):
@@ -717,10 +764,11 @@ enum MenuBarRenderer {
     static func attributed(for snapshot: SystemSnapshot,
                            metrics: [MenuBarMetric],
                            allowStacked: Bool = true,
-                           linePrefix: String = "") -> NSAttributedString {
+                           linePrefix: String = "",
+                           gatewaySnapshot: TMobileGatewaySnapshot? = nil) -> NSAttributedString {
         let result = NSMutableAttributedString()
         let stacked = usesStackedLayout(for: snapshot, metrics: metrics, allowStacked: allowStacked)
-        for segment in segments(for: snapshot, metrics: metrics, allowStacked: allowStacked) {
+        for segment in segments(for: snapshot, metrics: metrics, allowStacked: allowStacked, gatewaySnapshot: gatewaySnapshot) {
             switch segment {
             case let .text(string):
                 let rendered = string == "\n" && !linePrefix.isEmpty ? "\n" + linePrefix : string
