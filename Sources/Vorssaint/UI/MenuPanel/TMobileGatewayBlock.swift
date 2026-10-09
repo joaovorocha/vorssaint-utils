@@ -209,6 +209,7 @@ struct TMobileGatewayAddressEditor: View {
     @AppStorage(DefaultsKey.tMobileGatewayAddress) private var address = TMobileGatewayService.defaultBaseURL
     @State private var draft = ""
     @State private var history = false
+    @State private var addressSaveBlocked = false
     @Environment(\.dismiss) private var dismiss
 
     private var strings: TMobileGatewayStrings { .localized(l10n.language) }
@@ -230,6 +231,10 @@ struct TMobileGatewayAddressEditor: View {
             }
             Button(strings.save) { save() }
                 .disabled(!valid)
+            if addressSaveBlocked {
+                Text("Wait for the Wi-Fi change to finish before changing the gateway address.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             Divider()
             Text("Pin LTE / 5G signal, bands and individual numbers in Settings → Monitor → In the menu bar.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -243,6 +248,7 @@ struct TMobileGatewayAddressEditor: View {
     }
 
     private func save() {
+        guard !TMobileWiFiSettingsWindow.shared.hasPendingWrite else { addressSaveBlocked = true; return }
         guard let url = TMobileGatewaySupport.privateLANBaseURL(draft) else { return }
         address = url.absoluteString
         dismiss()

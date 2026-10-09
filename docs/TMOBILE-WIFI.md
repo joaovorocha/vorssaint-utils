@@ -75,7 +75,9 @@ configuration. The gateway has no verified server-side compare-and-swap
 contract, so a narrow race with another administrator remains possible.
 
 After a confirmed change, **Review restore of previous settings** can restore
-the touched fields while this window remains open. Restore checks the current
+the touched fields while this window remains open and the previous values are
+available. If the gateway masked a previous password, replacing it cannot
+offer a restore of that unknown password. Restore checks the current
 configuration, preserves other fields and requires a separate confirmation and
 readback. The previous values stay only in session memory; closing the window
 discards this restore option.

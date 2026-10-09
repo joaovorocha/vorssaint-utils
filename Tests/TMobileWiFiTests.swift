@@ -35,6 +35,8 @@ enum TMobileWiFiTests {
                          && !String(reflecting: config).contains("fixture-key")
                          && !String(describing: edit).contains("changed-fixture")
                          && !String(describing: original).contains("fixture-key"), "UI projection, summaries and normal debug descriptions contain no credential values")
+            suite.expect(changed.changes.first?.contains("“Fixture network” → “Renamed fixture”") == true,
+                         "rename review identifies the exact current and proposed SSID without a password")
             let inverse = try original.inverse(of: [edit])
             let restored = try changed.payload.applying(inverse).payload
             suite.expect(restored.sameConfiguration(as: original), "touched-field inverse restores the original full configuration")

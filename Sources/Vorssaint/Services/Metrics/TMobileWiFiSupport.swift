@@ -196,7 +196,11 @@ struct TMobileWiFiPayload: CustomStringConvertible, CustomDebugStringConvertible
             var row = rows[edit.ssidID]
             if let name = edit.name {
                 guard allowed.contains(.name), TMobileWiFiSupport.validName(name) else { throw TMobileWiFiFailure.invalidEdit }
-                if row["ssidName"] as? String != name { row["ssidName"] = name; changes.append("Network \(edit.ssidID + 1): name will change") }
+                if row["ssidName"] as? String != name {
+                    let previous = configuration.ssids[edit.ssidID].name ?? "Not reported"
+                    row["ssidName"] = name
+                    changes.append("Network \(edit.ssidID + 1): name “\(previous)” → “\(name)”")
+                }
             }
             if let password = edit.password {
                 guard allowed.contains(.password), TMobileWiFiSupport.validPassword(password) else { throw TMobileWiFiFailure.invalidEdit }

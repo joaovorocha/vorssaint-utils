@@ -8,6 +8,7 @@ final class TMobileWiFiSettingsWindow: NSObject, NSWindowDelegate {
     static let shared = TMobileWiFiSettingsWindow()
     private var window: NSWindow?
     private var service: TMobileWiFiService?
+    var hasPendingWrite: Bool { service?.phase == .applying || service?.phase == .verifying }
 
     func show() {
         if let window { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
@@ -53,6 +54,7 @@ struct TMobileWiFiSettingsView: View {
     @State private var requestTask: Task<Void, Never>?
     @State private var confirmingApply = false
     @State private var confirmingReload = false
+    @State private var interruptedOrigin: String?
 
     init(service: TMobileWiFiService, close: @escaping () -> Void) {
         self.service = service
@@ -64,7 +66,7 @@ struct TMobileWiFiSettingsView: View {
         [.connecting, .loading, .applying, .verifying].contains(service.phase)
     }
     private var writing: Bool { [.applying, .verifying].contains(service.phase) }
-    private var editingAllowed: Bool { [.ready, .verified, .failed].contains(service.phase) && service.review == nil }
+    private var editingAllowed: Bool { [.ready, .verified].contains(service.phase) && service.review == nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -83,6 +85,10 @@ struct TMobileWiFiSettingsView: View {
             if busy { HStack { ProgressView().controlSize(.small); Text(phaseLabel) }.accessibilityElement(children: .combine) }
             if let message = service.message {
                 Text(message).font(.callout).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            }
+            if let interruptedOrigin {
+                Text("The previous gateway (\(interruptedOrigin)) may have received an unconfirmed change. Check that gateway’s settings before sending it another change.")
+                    .font(.callout).fixedSize(horizontal: false, vertical: true)
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
@@ -134,7 +140,10 @@ struct TMobileWiFiSettingsView: View {
         .padding(22).frame(minWidth: 740, idealWidth: 800, minHeight: 650, idealHeight: 780)
         .interactiveDismissDisabled(writing)
         .onChange(of: service.configuration) { _, _ in clearDrafts() }
-        .onChange(of: address) { _, _ in password = ""; trustedNetwork = false; clearDrafts(); requestTask?.cancel(); service.disconnect() }
+        .onChange(of: address) { previous, _ in
+            if writing { interruptedOrigin = previous }
+            password = ""; trustedNetwork = false; clearDrafts(); requestTask?.cancel(); service.disconnect()
+        }
         .onDisappear { requestTask?.cancel(); password = ""; edits.removeAll(); service.disconnect() }
         .confirmationDialog(service.review?.isRestore == true ? "Restore the reviewed Wi-Fi settings?" : "Apply the reviewed Wi-Fi changes?", isPresented: $confirmingApply, titleVisibility: .visible) {
             if let review = service.review {
@@ -186,7 +195,7 @@ struct TMobileWiFiSettingsView: View {
                 ForEach(Array(review.changes.enumerated()), id: \.offset) { _, change in Text(change) }
                 Text("Password values stay hidden. The gateway is checked again before saving; if settings changed elsewhere, reload and review them again.")
                     .font(.callout).foregroundStyle(.secondary)
-                Text("Keep this window open to review a restore after a confirmed change. Restore also requires your confirmation.")
+                Text("When previous values are available, keep this window open to review a restore after a confirmed change. Restore also requires your confirmation.")
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button(review.isRestore ? "Confirm restore…" : "Confirm & apply…") { confirmingApply = true }
