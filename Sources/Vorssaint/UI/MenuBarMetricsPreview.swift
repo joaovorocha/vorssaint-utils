@@ -171,6 +171,10 @@ struct MenuBarMetricsPreview: View {
     @ViewBuilder
     private func segmentView(_ segment: MenuBarSegment, stacked: Bool) -> some View {
         switch segment {
+        case let .cellularBlock(display, style):
+            Image(nsImage: TMobileGatewayIndicatorDrawing.image(display, style: style))
+                .renderingMode(.template).foregroundStyle(.white)
+                .accessibilityLabel(display.accessibilityValue)
         case let .text(string):
             Text(string)
                 .font(.system(size: MenuBarRenderer.statusFontSize(stacked: stacked),

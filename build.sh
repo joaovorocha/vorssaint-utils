@@ -559,6 +559,7 @@ if (( TEST )); then
         Sources/Vorssaint/Services/Metrics/NetworkSampler.swift
         Sources/Vorssaint/Services/Metrics/NetworkAddressService.swift
         Sources/Vorssaint/Services/Metrics/TMobileGatewaySupport.swift
+        Sources/Vorssaint/Services/Metrics/TMobileGatewayConnectedRadioSupport.swift
         Sources/Vorssaint/Services/Metrics/TMobileGatewayDiagnostics.swift
         Sources/Vorssaint/Services/Metrics/TMobileGatewayMenuBarSupport.swift
         Sources/Vorssaint/Services/Metrics/TMobileGatewayHistorySupport.swift

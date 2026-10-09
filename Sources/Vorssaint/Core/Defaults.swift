@@ -381,6 +381,7 @@ enum DefaultsKey {
     static let menuBarNetwork = "menuBarNetwork"
     static let menuBarTMobileLTE = "menuBarTMobileLTE"
     static let menuBarTMobile5G = "menuBarTMobile5G"
+    static let tMobileUnifiedMenuBarMigrated = "tMobileUnifiedMenuBarMigrated"
     static let menuBarTMobileLTEBands = "menuBarTMobileLTEBands"
     static let menuBarTMobile5GBands = "menuBarTMobile5GBands"
     static let menuBarTMobileLTERSRP = "menuBarTMobileLTERSRP"
@@ -1176,7 +1177,7 @@ enum Defaults {
         "gpu", "gpuTemperature",
         "memory",
         "battery", "batteryTime", "batteryTemperature", "peripheralBattery",
-        "network", "tMobileLTE", "tMobile5G", "tMobileLTEBands", "tMobile5GBands", "tMobileLTERSRP", "tMobile5GRSRP", "tMobileLTERSINR", "tMobile5GSINR", "tMobileLTERSRQ", "tMobile5GRSRQ", "tMobileLTERSSI", "tMobile5GRSSI",
+        "network", "tMobile5G",
         "diskUsage", "diskActivity", "connectedDevices", "power", "fanSpeed",
     ]
     static let allowedMenuBarLabelStyles = ["compact", "classic"]
@@ -1989,6 +1990,7 @@ enum Defaults {
         activateBetaChannelIfRunningBeta(in: defaults)
         installCompanionForBetaCommandBar(in: defaults)
         migrateLegacyMenuBarTemperatureMetric(in: defaults)
+        migrateTMobileConnectionIndicator(in: defaults)
         migrateLegacySwitcherWindowShortcut(in: defaults)
         migrateLegacyKeyboardDebounceWindow(in: defaults)
         migrateUtilityOrderForScreenshot(in: defaults)
@@ -2531,9 +2533,10 @@ enum Defaults {
         var seen = Set<String>()
         var result: [String] = []
         for rawValue in raw.split(separator: ",").map({ String($0) }) {
-            let values = rawValue == "temperature"
+            let canonical = legacyTMobileMetricNames.contains(rawValue) ? "tMobile5G" : rawValue
+            let values = canonical == "temperature"
                 ? ["cpuTemperature", "gpuTemperature", "batteryTemperature"]
-                : [rawValue]
+                : [canonical]
             for value in values {
                 guard defaults.contains(value), !seen.contains(value) else { continue }
                 seen.insert(value)
@@ -2544,6 +2547,23 @@ enum Defaults {
             result.append(value)
         }
         return result
+    }
+
+    static let legacyTMobileMetricNames: Set<String> = [
+        "tMobileLTE", "tMobile5G", "tMobileLTEBands", "tMobile5GBands",
+        "tMobileLTERSRP", "tMobile5GRSRP", "tMobileLTERSINR", "tMobile5GSINR",
+        "tMobileLTERSRQ", "tMobile5GRSRQ", "tMobileLTERSSI", "tMobile5GRSSI",
+    ]
+
+    /// Preserve this Mac's existing polling opt-in, once. A new profile stays
+    /// off; turning the combined indicator off later must not be undone.
+    static func migrateTMobileConnectionIndicator(in defaults: UserDefaults) {
+        guard !defaults.bool(forKey: DefaultsKey.tMobileUnifiedMenuBarMigrated) else { return }
+        let wasPinned = legacyTMobileMetricNames.contains { name in
+            defaults.bool(forKey: "menuBar" + name.prefix(1).uppercased() + String(name.dropFirst()))
+        }
+        if wasPinned { defaults.set(true, forKey: DefaultsKey.menuBarTMobile5G) }
+        defaults.set(true, forKey: DefaultsKey.tMobileUnifiedMenuBarMigrated)
     }
 
     private static func migrateLegacyMenuBarTemperatureMetric(in defaults: UserDefaults) {

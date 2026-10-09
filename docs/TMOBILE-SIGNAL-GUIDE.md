@@ -30,8 +30,9 @@ comparison test. [T-Mobile network speed advice](https://www.t-mobile.com/suppor
 Band n41 is 2.5 GHz mid-band 5G; n71 is 600 MHz Extended Range 5G. A band
 name indicates the reported radio band, not a guaranteed speed or service
 badge. [T-Mobile network frequencies](https://www.t-mobile.com/support/coverage/t-mobile-network).
-Selecting a band for the menu bar changes the display only; the app does not
-lock the modem to a band.
+The menu bar now combines the selected connection's badge, bars and reported
+bands in one indicator; see [connected radio display](TMOBILE-INDICATOR.md).
+The app does not lock the modem to a band.
 
 Cell IDs identify radio cells, not geographic coordinates. LTE ECI is 28-bit
 and 5G NCI is 36-bit. The optional LTE eNB estimate uses the conventional

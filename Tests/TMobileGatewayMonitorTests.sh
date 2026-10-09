@@ -8,6 +8,7 @@ trap 'rm -rf "$task_temp"' EXIT
 task_sdk="$(xcrun --show-sdk-path)"
 swiftc -Onone -sdk "$task_sdk" -module-cache-path "$task_temp/module-cache" \
     Sources/Vorssaint/Services/Metrics/TMobileGatewaySupport.swift \
+    Sources/Vorssaint/Services/Metrics/TMobileGatewayConnectedRadioSupport.swift \
     Sources/Vorssaint/Services/Metrics/TMobileGatewayService.swift \
     Sources/Vorssaint/Services/Metrics/TMobileGatewayMenuBarSupport.swift \
     Sources/Vorssaint/Services/Metrics/TMobileGatewayMonitor.swift \

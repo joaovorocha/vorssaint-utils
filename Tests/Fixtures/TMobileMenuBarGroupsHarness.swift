@@ -35,21 +35,20 @@ enum Groups {
         ReviewDefaults.current = defaults
         defer { defaults.removePersistentDomain(forName: domain) }
         let radioMetrics = MenuBarMetric.allCases.filter { $0.rawValue.hasPrefix("tMobile") }
-        precondition(radioMetrics.count == 12, "All LTE and 5G choices must reach the grouping contract")
+        precondition(radioMetrics.count == 12, "All legacy LTE and 5G aliases must reach the grouping contract")
         for combines in [false, true] {
             defaults.set(combines, forKey: DefaultsKey.menuBarCombineTemperatures)
             let groups = Groups.metricStatusGroups(for: radioMetrics, strings: Strings())
-            precondition(groups.count == radioMetrics.count, "Every radio pin remains independently clickable")
-            for (group, metric) in zip(groups, radioMetrics) {
-                precondition(group.id == metric.rawValue && group.metrics == [metric]
-                             && group.focusMetric == metric && !group.title.isEmpty,
-                             "Radio order, identity, click focus and accessible title survive grouping")
-            }
+            precondition(groups.count == 1 && groups[0].id == "tMobile5G"
+                         && groups[0].metrics == [.tMobile5G] && groups[0].focusMetric == .tMobile5G
+                         && !groups[0].title.isEmpty,
+                         "Every legacy radio pin collapses into one clickable connected-radio item")
         }
         defaults.set(true, forKey: DefaultsKey.menuBarCombineTemperatures)
         let mixed = Groups.metricStatusGroups(for: [.cpu, .cpuTemperature] + radioMetrics, strings: Strings())
-        precondition(mixed.count == 13 && mixed.first?.metrics == [.cpu, .cpuTemperature],
-                     "CPU temperature grouping does not absorb the cellular pins")
-        print("PASS: LTE/5G status item groups keep all 12 pins independently clickable")
+        precondition(mixed.count == 2 && mixed.first?.metrics == [.cpu, .cpuTemperature]
+                     && mixed.last?.metrics == [.tMobile5G],
+                     "CPU temperature grouping remains separate from the single cellular connection")
+        print("PASS: all 12 legacy radio aliases collapse into one independently clickable connection")
     }
 }

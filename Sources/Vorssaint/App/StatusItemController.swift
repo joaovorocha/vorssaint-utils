@@ -574,10 +574,8 @@ final class StatusItemController {
         }
 
         let gatewayAccessibility = metrics.compactMap { metric -> String? in
-            guard let reading = metric.tMobileReading else { return nil }
-            return TMobileGatewayMenuBarSupport.display(reading,
-                snapshot: gatewaySnapshot,
-                signalStyle: defaultsSignalStyle(for: reading)).accessibilityValue
+            guard metric.tMobileReading != nil else { return nil }
+            return TMobileGatewayMenuBarSupport.connection(snapshot: gatewaySnapshot).accessibilityValue
         }.joined(separator: ", ")
         let appName = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
             ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String) ?? "Vorssaint"
@@ -656,10 +654,8 @@ final class StatusItemController {
                 button.imagePosition = .noImage
             }
             let readings = group.metrics.compactMap { metric -> String? in
-                guard let reading = metric.tMobileReading else { return nil }
-                return TMobileGatewayMenuBarSupport.display(reading,
-                    snapshot: gatewaySnapshot,
-                    signalStyle: defaultsSignalStyle(for: reading)).accessibilityValue
+                guard metric.tMobileReading != nil else { return nil }
+                return TMobileGatewayMenuBarSupport.connection(snapshot: gatewaySnapshot).accessibilityValue
             }
             let accessibleTitle = readings.isEmpty ? group.title : readings.joined(separator: ", ")
             if button.toolTip != accessibleTitle { button.toolTip = accessibleTitle }
@@ -680,6 +676,10 @@ final class StatusItemController {
     /// How the enabled metrics split into separate items. Static so the
     /// Settings preview draws the same split the bar does.
     static func metricStatusGroups(for metrics: [MenuBarMetric], strings: Strings) -> [MetricStatusGroup] {
+        let metrics = metrics.reduce(into: [MenuBarMetric]()) { result, metric in
+            let canonical: MenuBarMetric = metric.rawValue.hasPrefix("tMobile") ? .tMobile5G : metric
+            if !result.contains(canonical) { result.append(canonical) }
+        }
         guard MenuBarMetricAppearance.current.allowsCombinedTemperatures,
               UserDefaults.standard.bool(forKey: DefaultsKey.menuBarCombineTemperatures) else {
             return metrics.map {

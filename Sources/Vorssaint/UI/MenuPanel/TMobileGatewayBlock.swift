@@ -305,7 +305,7 @@ struct TMobileGatewayAddressEditor: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Divider()
-            Text("Pin LTE / 5G signal, bands and individual numbers in Settings → Monitor → In the menu bar.")
+            Text("Show the connected radio, bars and bands together in Settings → Monitor → In the menu bar → T-Mobile connection. All radio metrics are in the gateway dropdown.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button("Local history & tower map…") { history = true }
             Button("Wi-Fi & router settings…") { TMobileWiFiSettingsWindow.shared.show() }

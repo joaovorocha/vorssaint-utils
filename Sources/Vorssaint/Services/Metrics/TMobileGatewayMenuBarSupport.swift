@@ -3,8 +3,8 @@
 
 import Foundation
 
-/// Independent pins for each radio. A band pin reports the gateway's current
-/// band; it never changes radio configuration or locks a band.
+/// Legacy reading identities retained for saved preferences and detail routing.
+/// The menu bar now renders one connected-radio indicator.
 enum TMobileGatewayMenuBarReading: String, CaseIterable {
     case lteSignal, fiveGSignal, lteBands, fiveGBands
     case lteRSRP, fiveGRSRP, lteSINR, fiveGSINR
@@ -35,6 +35,34 @@ enum TMobileGatewayMenuBarReading: String, CaseIterable {
 }
 
 enum TMobileGatewayMenuBarSupport {
+    struct ConnectionDisplay: Equatable {
+        let badge: String
+        let bands: String
+        let bars: Int?
+        let accessibilityValue: String
+    }
+
+    static func connection(snapshot: TMobileGatewaySnapshot?) -> ConnectionDisplay {
+        guard let active = TMobileGatewayConnectedRadioSupport.select(from: snapshot) else {
+            return .init(badge: "—", bands: "", bars: nil,
+                         accessibilityValue: "T-Mobile connection: current radio unavailable")
+        }
+        // T-Mobile's published network table classifies these NR bands as UC.
+        // This is a band-based label, not a gateway-reported UC flag or speed.
+        let ucBands: Set<String> = ["n2", "n25", "n41", "n258", "n260", "n261"]
+        let uc = active.technology == .fiveG && snapshot?.roaming != true
+            && active.bands.contains { ucBands.contains($0) }
+        let badge = uc ? "5G UC" : active.technologyLabel
+        let bands = String(active.bands.prefix(3).joined(separator: "+").prefix(24))
+            + (active.bands.count > 3 ? "+…" : "")
+        let bars = active.radio.bars.flatMap { (0...5).contains($0) ? $0 : nil }
+        let spokenBars = bars.map { "\($0) of 5 signal bars" } ?? "Signal unavailable"
+        let spokenBands = active.bands.isEmpty ? "Band not reported" : "Reported bands \(active.bands.joined(separator: ", "))"
+        let inference = uc ? ", UC inferred from the reported band" : ""
+        return .init(badge: badge, bands: bands, bars: bars,
+                     accessibilityValue: "T-Mobile connection: \(badge), \(spokenBands), \(spokenBars)\(inference)")
+    }
+
     struct Display: Equatable {
         let label: String
         let value: String
