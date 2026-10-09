@@ -167,7 +167,9 @@ final class TMobileWiFiService: ObservableObject {
         let lease = UUID(); Self.writeLease = lease
         defer { if Self.writeLease == lease { Self.writeLease = nil } }
         let current = generation
-        phase = .loading
+        // Treat the final preflight as part of the confirmed transaction, so
+        // window close and gateway-address guards cover it before the POST.
+        phase = .verifying
         do {
             let fresh = try await fetch()
             guard generation == current else { return }

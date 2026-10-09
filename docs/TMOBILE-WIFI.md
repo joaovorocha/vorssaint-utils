@@ -69,8 +69,11 @@ automatically retries it. A successful response alone is insufficient: a fresh
 read must confirm the requested result and preserved settings.
 
 If the connection drops or a result cannot be checked, the app reports an
-unconfirmed outcome. Reconnect and use **Check pending change** before another
-write. It does not claim success or automatically replay a previous full
+unconfirmed outcome. Reconnect to the gateway's network and use **Check pending
+change** in the same session before another write. Signing in again, signing
+out or closing the window discards pending verification and restore state. If
+authentication expired, sign in again to read the current settings before
+preparing any new change. It does not claim success or automatically replay a previous full
 configuration. The gateway has no verified server-side compare-and-swap
 contract, so a narrow race with another administrator remains possible.
 

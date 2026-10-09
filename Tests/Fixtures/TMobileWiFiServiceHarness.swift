@@ -178,6 +178,8 @@ final class TestSuite {
         let firstID = first.review!.id, secondID = second.review!.id
         let firstWrite = Task { await first.apply(reviewID: firstID) }
         await wait { WiFiProtocol.requests.count == 7 }
+        suite.expect(first.phase == .verifying && WiFiProtocol.posts == 0,
+                     "final preflight publishes a transaction phase before POST so close and address guards remain active")
         await second.apply(reviewID: secondID)
         suite.expect(second.phase == .reviewing && WiFiProtocol.requests.count == 7 && WiFiProtocol.posts == 0,
                      "process-wide lease prevents another window entering preflight during a write transaction")
