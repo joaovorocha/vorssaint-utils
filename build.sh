@@ -571,6 +571,8 @@ if (( TEST )); then
         Sources/Vorssaint/Services/Metrics/TMobileWiFiService.swift
         Sources/Vorssaint/Services/Metrics/TMobileCellTelemetrySupport.swift
         Sources/Vorssaint/Services/Metrics/TMobileCellTelemetryService.swift
+        Sources/Vorssaint/Services/Metrics/TMobileOpenCellIDSupport.swift
+        Sources/Vorssaint/Services/Metrics/TMobileOpenCellIDService.swift
         Sources/Vorssaint/Core/TMobileGatewayStrings.swift
         Sources/Vorssaint/Services/Metrics/SpeedTest.swift
         Sources/Vorssaint/Services/Metrics/PeripheralBatterySampler.swift
@@ -618,6 +620,7 @@ if (( TEST )); then
         zsh ./Tests/TMobileGatewayMonitorTests.sh || test_status=1
         zsh ./Tests/TMobileWiFiServiceTests.sh || test_status=1
         zsh ./Tests/TMobileCellTelemetryServiceTests.sh || test_status=1
+        zsh ./Tests/TMobileOpenCellIDServiceTests.sh || test_status=1
     fi
     discard_test_preferences || test_status=1
     exit $test_status

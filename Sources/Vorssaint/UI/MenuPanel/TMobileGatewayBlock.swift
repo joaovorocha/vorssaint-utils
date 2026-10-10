@@ -236,7 +236,7 @@ struct TMobileGatewayAddressEditor: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Divider()
-            Text("Show the connected radio, bars and bands together in Settings → Monitor → In the menu bar → T-Mobile connection. All radio metrics are in the gateway dropdown.")
+            Text("Show the connected radio, bars and bands together in Settings → Monitor → In the menu bar → T-Mobile connection. All available radio metrics are in the Radio & tower details window.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button("Local history & tower map…") { history = true }
             Button("Radio & tower details…") { TMobileCellTelemetryWindow.shared.show() }
