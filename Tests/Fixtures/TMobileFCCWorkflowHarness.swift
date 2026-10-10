@@ -43,6 +43,7 @@ struct TMobileMapCoordinate: Codable, Equatable {
             credentialLifecycle(suite)
             keychainBoundary(suite)
             try references(suite, folder: folder)
+            try modeledSignals(suite, folder: folder)
             try boundedReader(suite, folder: folder)
         } catch { suite.check(false, "temporary fixture setup and cleanup complete") }
         print("FCC workflow fixtures: \(suite.checks) checks, \(suite.failures) failures; no live Keychain, account, API or coverage archive")
@@ -156,7 +157,8 @@ struct TMobileMapCoordinate: Codable, Equatable {
                                                      ["latitude": 41, "longitude": -99], ["latitude": 40, "longitude": -100]]]]]
         let legacyData = try JSONSerialization.data(withJSONObject: legacy)
         let direct = try JSONDecoder().decode(TMobileCoverageFCCLayer.self, from: legacyData)
-        suite.check(direct.source == nil && direct.polygons.count == 1, "beta.9 archive without source decodes with nil provenance")
+        suite.check(direct.source == nil && direct.modeledSignalDBm == nil && direct.polygons.count == 1,
+                    "beta.9 archive without source or modeled signal decodes with unknown values")
         try legacyData.write(to: legacyFolder.appendingPathComponent("fcc-reference.json"))
         let legacyStore = TMobileCoverageReferenceStore(folder: legacyFolder)
         suite.check(legacyStore.layer == direct && legacyStore.errorMessage == nil,
@@ -221,6 +223,77 @@ struct TMobileMapCoordinate: Codable, Equatable {
         loaded.removeLayer()
         suite.check(loaded.layer == nil && loaded.errorMessage == nil && !FileManager.default.fileExists(atPath: archive.path)
                     && FileManager.default.fileExists(atPath: unrelated.path), "explicit removal deletes only the reference archive")
+    }
+
+    @MainActor private static func modeledSignals(_ suite: FCCWorkflowSuite, folder: URL) throws {
+        let destination = folder.appendingPathComponent("modeled-signal", isDirectory: true)
+        let store = TMobileCoverageReferenceStore(folder: destination)
+        let outer = [[-100.0, 40.0], [-99, 40], [-99, 41], [-100, 41], [-100, 40]]
+        let hole = [[-99.8, 40.2], [-99.8, 40.4], [-99.6, 40.4], [-99.6, 40.2], [-99.8, 40.2]]
+        let polygon = [outer, hole]
+        func feature(_ signal: Any?, multi: Bool = false) -> [String: Any] {
+            var properties: [String: Any] = ["private": "excluded-fixture-marker", "minsignal": -1]
+            if let signal { properties["fccMinimumSignalDBm"] = signal }
+            return ["type": "Feature", "properties": properties,
+                    "geometry": ["type": multi ? "MultiPolygon" : "Polygon",
+                                 "coordinates": multi ? [polygon, polygon] as Any : polygon as Any]]
+        }
+        func data(_ features: [[String: Any]]) throws -> Data {
+            try JSONSerialization.data(withJSONObject: ["type": "FeatureCollection", "features": features])
+        }
+        let fixture = try data([feature(-90, multi: true), feature(NSNull()), feature(nil)])
+        let expected: [Double?] = [-90, -90, nil, nil]
+        suite.check(store.importLayer(data: fixture, publishedDate: date, source: provenance()),
+                    "explicit modeled signal import succeeds with provenance")
+        let original = store.layer
+        suite.check(original?.modeledSignalDBm == expected && original?.polygons.count == expected.count,
+                    "MultiPolygon signal duplicates per component and null/missing values remain aligned and unknown")
+        suite.check(original?.polygons.allSatisfy { $0.count == 2 } == true,
+                    "signal retention keeps each component's original hole")
+        let archive = destination.appendingPathComponent("fcc-reference.json")
+        let saved = try Data(contentsOf: archive)
+        let loaded = TMobileCoverageReferenceStore(folder: destination)
+        suite.check(loaded.layer == original && loaded.layer?.modeledSignalDBm == expected && loaded.errorMessage == nil,
+                    "modeled signal, source and geometry roundtrip through persisted validation")
+        let encoded = String(data: saved, encoding: .utf8) ?? ""
+        suite.check(!encoded.contains("excluded-fixture-marker") && !encoded.contains("minsignal")
+                    && !encoded.contains("fccMinimumSignalDBm") && encoded.contains("modeledSignalDBm"),
+                    "archive retains the typed signal array without arbitrary or original property dictionaries")
+        for value: Any in [-120, -50, -85.5, NSNull()] {
+            let parsed = try TMobileCoverageReferenceSupport.parse(data([feature(value)]), publishedDate: date)
+            suite.check(parsed.modeledSignalDBm?.count == 1, "finite signal boundaries, decimals and explicit null are accepted")
+        }
+        for value: Any in [true, "-90", -120.01, -49.99, [Int](), ["value": -90]] {
+            let invalid = try data([feature(value)])
+            let rejected = !store.importLayer(data: invalid, publishedDate: date, source: provenance())
+            let after = try Data(contentsOf: archive)
+            suite.check(rejected && store.layer == original && after == saved,
+                        "invalid supplied modeled signal fails without replacing the saved reference")
+        }
+        let validText = String(data: try data([feature(-90)]), encoding: .utf8)!
+        let nonfinite = validText.replacingOccurrences(of: #""fccMinimumSignalDBm":-90"#, with: #""fccMinimumSignalDBm":1e999"#)
+        suite.check((try? TMobileCoverageReferenceSupport.parse(Data(nonfinite.utf8), publishedDate: date)) == nil,
+                    "nonfinite JSON numeric signal fails closed")
+        suite.check(!TMobileCoverageReferenceSupport.validModeledSignalDBm(.nan)
+                    && !TMobileCoverageReferenceSupport.validModeledSignalDBm(.infinity),
+                    "nonfinite in-memory modeled values are invalid")
+        let savedObject = try JSONSerialization.jsonObject(with: saved) as! [String: Any]
+        for invalid: [Any] in [[], [-90], [-90, -90, NSNull(), NSNull(), NSNull()],
+                               [-121, -90, NSNull(), NSNull()], [-49, -90, NSNull(), NSNull()],
+                               [true, -90, NSNull(), NSNull()], ["-90", -90, NSNull(), NSNull()]] {
+            var corrupted = savedObject; corrupted["modeledSignalDBm"] = invalid
+            try JSONSerialization.data(withJSONObject: corrupted).write(to: archive)
+            let rejected = TMobileCoverageReferenceStore(folder: destination)
+            suite.check(rejected.layer == nil && rejected.errorMessage != nil && store.layer == original,
+                        "persisted signal count, range or type mismatch cannot display an incorrect layer")
+        }
+        var legacy = savedObject; legacy.removeValue(forKey: "modeledSignalDBm")
+        try JSONSerialization.data(withJSONObject: legacy).write(to: archive)
+        let legacyLoaded = TMobileCoverageReferenceStore(folder: destination)
+        suite.check(legacyLoaded.layer?.modeledSignalDBm == nil && legacyLoaded.layer?.polygons == original?.polygons
+                    && legacyLoaded.layer?.source == original?.source && legacyLoaded.errorMessage == nil,
+                    "existing source-aware archives without signal remain valid unknown layers")
+        try saved.write(to: archive)
     }
 
     private static func boundedReader(_ suite: FCCWorkflowSuite, folder: URL) throws {

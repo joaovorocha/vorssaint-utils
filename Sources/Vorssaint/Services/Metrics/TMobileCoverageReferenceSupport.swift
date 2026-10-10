@@ -11,6 +11,10 @@ struct TMobileCoverageFCCLayer: Codable, Identifiable, Equatable {
     /// Polygon → rings (outer, then holes) → coordinates. Arbitrary GIS properties are excluded.
     let polygons: [[[TMobileMapCoordinate]]]
     var source: TMobileFCCReferenceSource? = nil
+    /// FCC predicted minimum signal, aligned with each polygon component.
+    /// A missing array is a legacy/unknown layer; nil entries are unknown values.
+    /// LTE/NR values describe modeled RSRP, never a measured reading or speed.
+    var modeledSignalDBm: [Double?]? = nil
     var title: String { source?.title ?? "FCC reference · \(publishedDate)" }
     var provenance: String { source?.provenance ?? "Imported FCC carrier-reported model · source declared by owner" }
 }
@@ -28,6 +32,11 @@ enum TMobileCoverageReferenceError: LocalizedError {
 
 enum TMobileCoverageReferenceSupport {
     static let maximumBytes = 5_000_000
+    static let modeledSignalProperty = "fccMinimumSignalDBm"
+
+    static func validModeledSignalDBm(_ value: Double) -> Bool {
+        value.isFinite && (-120 ... -50).contains(value)
+    }
 
     /// A selected FIFO, device, or symlink must never block a worker before it
     /// can respond to cancellation. Size is checked again while reading.
@@ -70,11 +79,25 @@ enum TMobileCoverageReferenceSupport {
               root["type"] as? String == "FeatureCollection",
               let features = root["features"] as? [[String: Any]], !features.isEmpty, features.count <= 1_000
         else { throw TMobileCoverageReferenceError.invalidData }
-        var polygons: [[[TMobileMapCoordinate]]] = [], count = 0
+        var polygons: [[[TMobileMapCoordinate]]] = [], signals: [Double?] = [], count = 0
+        var hasSignalProperty = false
         for feature in features {
             guard feature["type"] as? String == "Feature",
                   let geometry = feature["geometry"] as? [String: Any],
                   let type = geometry["type"] as? String else { throw TMobileCoverageReferenceError.invalidData }
+            var signal: Double?
+            if let rawProperties = feature["properties"], !(rawProperties is NSNull) {
+                guard let properties = rawProperties as? [String: Any] else { throw TMobileCoverageReferenceError.invalidData }
+                if let rawSignal = properties[modeledSignalProperty] {
+                    hasSignalProperty = true
+                    if !(rawSignal is NSNull) {
+                        guard let number = rawSignal as? NSNumber,
+                              CFGetTypeID(number) != CFBooleanGetTypeID(),
+                              validModeledSignalDBm(number.doubleValue) else { throw TMobileCoverageReferenceError.invalidData }
+                        signal = number.doubleValue
+                    }
+                }
+            }
             let rawPolygons: [Any]
             if type == "Polygon", let rings = geometry["coordinates"] { rawPolygons = [rings] }
             else if type == "MultiPolygon", let shapes = geometry["coordinates"] as? [Any] { rawPolygons = shapes }
@@ -100,11 +123,13 @@ enum TMobileCoverageReferenceSupport {
                     rings.append(ring)
                 }
                 polygons.append(rings)
+                signals.append(signal)
                 guard polygons.count <= 1_000 else { throw TMobileCoverageReferenceError.invalidData }
             }
         }
         guard !polygons.isEmpty else { throw TMobileCoverageReferenceError.invalidData }
-        return .init(id: UUID(), publishedDate: publishedDate, importedAt: now, polygons: polygons)
+        return .init(id: UUID(), publishedDate: publishedDate, importedAt: now, polygons: polygons,
+                     modeledSignalDBm: hasSignalProperty ? signals : nil)
     }
 }
 
@@ -129,9 +154,18 @@ enum TMobileCoverageReferenceSupport {
                 from: TMobileCoverageReferenceSupport.readLocalFile(at: file, maximumBytes: 10_000_000))
             guard saved.source == nil || (saved.source!.isValid && saved.source!.availabilityAsOf == saved.publishedDate)
             else { throw TMobileCoverageReferenceError.invalidData }
+            if let signals = saved.modeledSignalDBm {
+                guard signals.count == saved.polygons.count,
+                      signals.allSatisfy({ $0.map(TMobileCoverageReferenceSupport.validModeledSignalDBm) ?? true })
+                else { throw TMobileCoverageReferenceError.invalidData }
+            }
             // Revalidate persisted geometry through the same bounded importer.
-            let features = saved.polygons.map { polygon in
-                ["type": "Feature", "geometry": ["type": "Polygon", "coordinates": polygon.map { $0.map { [$0.longitude, $0.latitude] } }]] as [String: Any]
+            let features = saved.polygons.enumerated().map { index, polygon in
+                var feature: [String: Any] = ["type": "Feature", "geometry": ["type": "Polygon", "coordinates": polygon.map { $0.map { [$0.longitude, $0.latitude] } }]]
+                if let signals = saved.modeledSignalDBm {
+                    feature["properties"] = [TMobileCoverageReferenceSupport.modeledSignalProperty: signals[index].map { $0 as Any } ?? NSNull()]
+                }
+                return feature
             }
             let geo = try JSONSerialization.data(withJSONObject: ["type": "FeatureCollection", "features": features])
             _ = try TMobileCoverageReferenceSupport.parse(geo, publishedDate: saved.publishedDate)

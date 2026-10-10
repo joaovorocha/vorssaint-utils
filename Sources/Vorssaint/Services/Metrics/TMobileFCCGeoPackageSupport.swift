@@ -58,7 +58,7 @@ enum TMobileFCCGeoPackageSupport {
 
     enum Failure: LocalizedError, Equatable {
         case cannotRead, unsupportedRawSchema, invalidSelection, invalidBounds
-        case malformedGeometry, invalidSpatialIndex, areaTooLarge, noCoverage, cancelled, timedOut
+        case malformedGeometry, invalidModeledSignal, invalidSpatialIndex, areaTooLarge, noCoverage, cancelled, timedOut
         var errorDescription: String? {
             switch self {
             case .cannotRead: return "The local GeoPackage could not be read. Choose an uncompressed FCC Raw Coverage GeoPackage."
@@ -66,6 +66,7 @@ enum TMobileFCCGeoPackageSupport {
             case .invalidSelection: return "Choose an available T-Mobile technology, speed tier, and environment from this GeoPackage."
             case .invalidBounds: return "Select a finite map area within WGS84 bounds that does not cross the date line."
             case .malformedGeometry: return "The selected coverage contains invalid or unsupported geometry. Choose a valid 2D WGS84 FCC Raw Coverage GeoPackage."
+            case .invalidModeledSignal: return "The selected coverage contains an invalid modeled signal value. FCC minimum signal must be a number from −120 to −50 dBm, or unknown."
             case .invalidSpatialIndex: return "The GeoPackage spatial index is missing or inconsistent. Choose a complete FCC Raw Coverage GeoPackage."
             case .areaTooLarge: return "Zoom in and import a smaller map area. Complete intersecting polygons exceed the 5 MB, 1,000 polygon, or 100,000 coordinate limit."
             case .noCoverage: return "No model polygons for this category intersect the selected map area."
@@ -100,8 +101,9 @@ enum TMobileFCCGeoPackageSupport {
         let layer = try db.layer(named: selection.layerName)
         let table = try identifier(layer.name), index = try identifier(layer.index)
         let environment = selection.environment == 2 ? "f.environmnt IN (0,1)" : "f.environmnt = ?9"
+        let signalColumn = layer.hasMinimumSignal ? "f.minsignal" : "NULL"
         let statement = try db.prepare("""
-            SELECT f.geom,r.minx,r.maxx,r.miny,r.maxy FROM \(table) AS f
+            SELECT f.geom,r.minx,r.maxx,r.miny,r.maxy,\(signalColumn) FROM \(table) AS f
             JOIN \(index) AS r ON f.fid=r.id
             WHERE r.minx<=?1 AND r.maxx>=?2 AND r.miny<=?3 AND r.maxy>=?4
               AND f.providerid=?5 AND f.brandname='T-Mobile' AND f.technology=?6
@@ -129,11 +131,23 @@ enum TMobileFCCGeoPackageSupport {
             else { throw Failure.invalidSpatialIndex }
             let selected = geometry.intersecting(bounds)
             guard !selected.isEmpty else { continue }
+            var properties: [String: Any] = [:]
+            if layer.hasMinimumSignal {
+                let signalType = sqlite3_column_type(statement, 5)
+                if signalType == SQLITE_NULL {
+                    properties["fccMinimumSignalDBm"] = NSNull()
+                } else {
+                    guard [SQLITE_INTEGER, SQLITE_FLOAT].contains(signalType) else { throw Failure.invalidModeledSignal }
+                    let signal = sqlite3_column_double(statement, 5)
+                    guard signal.isFinite, (-120 ... -50).contains(signal) else { throw Failure.invalidModeledSignal }
+                    properties["fccMinimumSignalDBm"] = signal
+                }
+            }
             polygonCount += selected.count
             coordinateCount += selected.reduce(0) { $0 + $1.reduce(0) { $0 + $1.count } }
             guard features.count < maximumPolygons, polygonCount <= maximumPolygons,
                   coordinateCount <= maximumCoordinates else { throw Failure.areaTooLarge }
-            features.append(["type": "Feature", "properties": [:] as [String: String], "geometry": geometry.json(polygons: selected)])
+            features.append(["type": "Feature", "properties": properties, "geometry": geometry.json(polygons: selected)])
         }
         guard !features.isEmpty else { throw Failure.noCoverage }
         try db.checkCancellation()
@@ -185,6 +199,7 @@ enum TMobileFCCGeoPackageSupport {
 
     private struct Layer {
         let name: String
+        let hasMinimumSignal: Bool
         var index: String { "rtree_\(name)_geom" }
     }
 
@@ -369,13 +384,13 @@ enum TMobileFCCGeoPackageSupport {
                 guard ["POLYGON", "MULTIPOLYGON"].contains(type), !result.contains(where: { $0.name == name }) else { throw Failure.unsupportedRawSchema }
                 // Official raw files can declare POLYGON but store standard MultiPolygon WKB.
                 // Every row is independently restricted to these two geometry types below.
-                let layer = Layer(name: name)
                 _ = try schema(name)
                 context.allowedTables.insert(name)
                 let fields = try columns(name)
-                let required: Set<String> = ["fid", "geom", "frn", "providerid", "brandname", "technology", "mindown", "minup", "minsignal", "environmnt"]
+                let required: Set<String> = ["fid", "geom", "frn", "providerid", "brandname", "technology", "mindown", "minup", "environmnt"]
                 guard required.isSubset(of: Set(fields.map(\.name))),
                       fields.contains(where: { $0.name == "fid" && $0.type == "INTEGER" && $0.primary == 1 }) else { throw Failure.unsupportedRawSchema }
+                let layer = Layer(name: name, hasMinimumSignal: fields.contains(where: { $0.name == "minsignal" }))
                 let indexSQL = try schema(layer.index, virtual: true)
                 // Accept only this exact built-in RTree module and column list.
                 let normalized = indexSQL.lowercased().filter { !$0.isWhitespace && $0 != "\"" && $0 != "`" && $0 != "[" && $0 != "]" }

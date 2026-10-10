@@ -47,16 +47,19 @@ private final class SyntheticDatabase {
     let url: URL
     private var db: OpaquePointer?
     let layer: String
-    init(folder: URL, layer: String = "fcc_raw", type: String = "POLYGON", index: Bool = true) throws {
+    let hasSignalColumn: Bool
+    init(folder: URL, layer: String = "fcc_raw", type: String = "POLYGON", index: Bool = true,
+         signalColumn: Bool = true) throws {
         url = folder.appendingPathComponent(UUID().uuidString + ".gpkg")
         self.layer = layer
+        hasSignalColumn = signalColumn
         guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) == SQLITE_OK else { throw FCC.Failure.cannotRead }
         try execute("""
             PRAGMA application_id=1196444487;
             CREATE TABLE gpkg_contents(table_name TEXT PRIMARY KEY,data_type TEXT,srs_id INTEGER);
             CREATE TABLE gpkg_geometry_columns(table_name TEXT,column_name TEXT,geometry_type_name TEXT,srs_id INTEGER,z INTEGER,m INTEGER);
             CREATE TABLE "\(layer)"(fid INTEGER PRIMARY KEY,geom BLOB,frn TEXT,providerid INTEGER,brandname TEXT,
-                technology INTEGER,mindown REAL,minup REAL,minsignal INTEGER,environmnt INTEGER);
+                technology INTEGER,mindown REAL,minup REAL,\(signalColumn ? "minsignal INTEGER," : "")environmnt INTEGER);
             INSERT INTO gpkg_contents VALUES('\(layer)','features',4326);
             INSERT INTO gpkg_geometry_columns VALUES('\(layer)','geom','\(type)',4326,0,0);
             """)
@@ -68,9 +71,9 @@ private final class SyntheticDatabase {
     }
     func add(_ bytes: Data, id: Int = 1, bounds: FCC.Bounds = .init(west: 0, south: 0, east: 10, north: 10),
              environment: Int = 0, provider: Int = 130403, brand: String = "T-Mobile", technology: Int = 500,
-             download: Double = 35, upload: Double = 3, index: Bool = true) throws {
+             download: Double = 35, upload: Double = 3, index: Bool = true, signal: Double? = -110) throws {
         var statement: OpaquePointer?
-        let query = "INSERT INTO \"\(layer)\" VALUES(?1,?2,'synthetic-frn-marker',?3,?4,?5,?6,?7,-110,?8)"
+        let query = "INSERT INTO \"\(layer)\"(fid,geom,frn,providerid,brandname,technology,mindown,minup,environmnt\(hasSignalColumn ? ",minsignal" : "")) VALUES(?1,?2,'synthetic-frn-marker',?3,?4,?5,?6,?7,?8\(hasSignalColumn ? ",?9" : ""))"
         guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK, let statement else { throw FCC.Failure.cannotRead }
         defer { sqlite3_finalize(statement) }
         sqlite3_bind_int64(statement, 1, Int64(id))
@@ -80,6 +83,10 @@ private final class SyntheticDatabase {
         sqlite3_bind_int(statement, 5, Int32(technology))
         sqlite3_bind_double(statement, 6, download); sqlite3_bind_double(statement, 7, upload)
         sqlite3_bind_int(statement, 8, Int32(environment))
+        if hasSignalColumn {
+            if let signal { sqlite3_bind_double(statement, 9, signal) }
+            else { sqlite3_bind_null(statement, 9) }
+        }
         guard sqlite3_step(statement) == SQLITE_DONE else { throw FCC.Failure.cannotRead }
         if index { try execute("INSERT INTO \"rtree_\(layer)_geom\" VALUES(\(id),\(bounds.west),\(bounds.east),\(bounds.south),\(bounds.north))") }
     }
@@ -102,6 +109,7 @@ private func selection(_ environment: Int = 0, layer: String = "fcc_raw", techno
         defer { try? FileManager.default.removeItem(at: folder) }
         let suite = Suite()
         try encoding(suite, folder)
+        try modeledSignals(suite, folder)
         try spatial(suite, folder)
         try categories(suite, folder)
         try malformed(suite, folder)
@@ -135,6 +143,7 @@ private func selection(_ environment: Int = 0, layer: String = "fcc_raw", techno
             let result = try FCC.extract(url: fixture.url, bounds: region, selection: selection())
             let parsed = try TMobileCoverageReferenceSupport.parse(result.geoJSON, publishedDate: "2026-01-01")
             suite.expect(parsed.polygons.count == 1 && parsed.polygons[0].count == 2, "actual GeoJSON parser accepts preserved hole")
+            suite.expect(parsed.modeledSignalDBm == [-110], "modeled signal survives all geometry byte orders with holes")
             suite.expect(parsed.polygons[0][0].map { [$0.longitude, $0.latitude] } == square, "whole original outer ring retained without clipping")
             suite.expect(parsed.polygons[0][1].map { [$0.longitude, $0.latitude] } == hole, "hole vertex order and exact values retained")
             suite.expect(result.metadata == .init(selection: selection(), bounds: region, featureCount: 1, polygonCount: 1, coordinateCount: 10), "allowlisted extraction metadata")
@@ -150,6 +159,51 @@ private func selection(_ environment: Int = 0, layer: String = "fcc_raw", techno
         suite.expect(parsed.polygons.count == 1 && result.metadata.polygonCount == 1 && result.metadata.featureCount == 1,
             "MultiPolygon spatial filtering keeps only complete intersecting components")
         suite.expect(parsed.polygons[0][0].map { [$0.longitude, $0.latitude] } == square, "intersecting MultiPolygon component retains every original coordinate")
+        suite.expect(parsed.modeledSignalDBm == [-110], "spatially filtered MultiPolygon signal remains aligned with retained components")
+        let full = try FCC.extract(url: multi.url, bounds: .init(west: -1, south: -1, east: 22, north: 22), selection: selection())
+        let fullParsed = try TMobileCoverageReferenceSupport.parse(full.geoJSON, publishedDate: "2026-01-01")
+        suite.expect(fullParsed.polygons.count == 2 && fullParsed.modeledSignalDBm == [-110, -110],
+                     "one raw feature signal is duplicated for each MultiPolygon component")
+    }
+
+    private static func modeledSignals(_ suite: Suite, _ folder: URL) throws {
+        for signal: Double? in [-120, -85.5, -50, nil] {
+            let fixture = try SyntheticDatabase(folder: folder)
+            try fixture.add(geometry([[square, hole]]), signal: signal); fixture.close()
+            let result = try FCC.extract(url: fixture.url, bounds: region, selection: selection())
+            let parsed = try TMobileCoverageReferenceSupport.parse(result.geoJSON, publishedDate: "2026-01-01")
+            suite.expect(parsed.modeledSignalDBm == [signal] && parsed.polygons[0].count == 2,
+                         "numeric boundary, decimal and null signal preserve geometry with an aligned value")
+            let object = try JSONSerialization.jsonObject(with: result.geoJSON) as! [String: Any]
+            let feature = (object["features"] as! [[String: Any]])[0]
+            suite.expect(Set((feature["properties"] as! [String: Any]).keys) == ["fccMinimumSignalDBm"],
+                         "reader emits only the allowlisted modeled signal property")
+        }
+        let absent = try SyntheticDatabase(folder: folder, signalColumn: false)
+        try absent.add(geometry([[square]])); absent.close()
+        let unknown = try FCC.extract(url: absent.url, bounds: region, selection: selection())
+        let parsedUnknown = try TMobileCoverageReferenceSupport.parse(unknown.geoJSON, publishedDate: "2026-01-01")
+        suite.expect(parsedUnknown.modeledSignalDBm == nil && parsedUnknown.polygons.count == 1,
+                     "raw schema without minsignal remains usable with an unknown signal layer")
+        for value in ["-120.01", "-49.99", "1e999", "'-110 dBm'", "x'0102'", "1"] {
+            let fixture = try SyntheticDatabase(folder: folder)
+            try fixture.add(geometry([[square]])); try fixture.execute("UPDATE fcc_raw SET minsignal=\(value)"); fixture.close()
+            suite.fails(.invalidModeledSignal, "invalid raw signal range, nonfinite value or storage type rejects extraction") {
+                _ = try FCC.extract(url: fixture.url, bounds: region, selection: selection())
+            }
+        }
+        let mixed = try SyntheticDatabase(folder: folder)
+        try mixed.add(geometry([[square]]), id: 1, signal: -80)
+        try mixed.add(geometry([[square]]), id: 2, environment: 1, signal: nil)
+        try mixed.add(geometry([[square]]), id: 3, technology: 400, download: 5, upload: 1, signal: -100)
+        mixed.close()
+        let union = try TMobileCoverageReferenceSupport.parse(
+            FCC.extract(url: mixed.url, bounds: region, selection: selection(2)).geoJSON, publishedDate: "2026-01-01")
+        suite.expect(union.modeledSignalDBm?.count == 2 && union.modeledSignalDBm?.compactMap { $0 } == [-80],
+                     "environment union retains known and unknown signals without adding another technology")
+        let lte = try TMobileCoverageReferenceSupport.parse(FCC.extract(url: mixed.url, bounds: region,
+            selection: selection(0, technology: 400, download: 5, upload: 1)).geoJSON, publishedDate: "2026-01-01")
+        suite.expect(lte.modeledSignalDBm == [-100], "LTE modeled RSRP stays bound to its selected category")
     }
 
     private static func spatial(_ suite: Suite, _ folder: URL) throws {
