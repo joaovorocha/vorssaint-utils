@@ -15,6 +15,7 @@ import Foundation
     private enum Demand { case none, once, continuous }
     private var demand: Demand = .none
     private let manager: CLLocationManager
+    private var refreshTimer: AnyCancellable?
 
     init(manager: CLLocationManager = CLLocationManager()) {
         self.manager = manager
@@ -22,7 +23,7 @@ import Foundation
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
-        manager.distanceFilter = 10
+        manager.distanceFilter = kCLDistanceFilterNone
     }
 
     /// Call only for an explicit recording or Use Mac location action.
@@ -39,6 +40,8 @@ import Foundation
 
     func stop() {
         demand = .none
+        refreshTimer?.cancel()
+        refreshTimer = nil
         manager.stopUpdatingLocation()
         fix = nil
         status = "Mac location is off"
@@ -53,16 +56,40 @@ import Foundation
             manager.requestWhenInUseAuthorization()
         case .authorizedAlways, .authorizedWhenInUse:
             status = "Finding the Mac's location…"
-            if demand == .continuous { manager.startUpdatingLocation() }
+            if demand == .continuous {
+                refreshContinuousLocation()
+                if refreshTimer == nil {
+                    refreshTimer = Timer.publish(every: 20, on: .main, in: .common).autoconnect()
+                        .sink { [weak self] _ in self?.refreshContinuousLocation() }
+                }
+            }
             else { manager.requestLocation() }
         case .denied, .restricted:
+            refreshTimer?.cancel()
+            refreshTimer = nil
             manager.stopUpdatingLocation()
             fix = nil
             status = "Mac location is unavailable. Enable Location Services in System Settings."
         @unknown default:
+            refreshTimer?.cancel()
+            refreshTimer = nil
+            manager.stopUpdatingLocation()
             fix = nil
             status = "Mac location authorization is unavailable"
         }
+    }
+
+    private func refreshContinuousLocation() {
+        guard demand == .continuous,
+              manager.authorizationStatus == .authorizedAlways else { return }
+        // Apple documents that successive starts alone do not produce another
+        // initial event; stop/start does. Refresh while stationary so a true
+        // new fix can support the two-minute dwell and 30-second age limit.
+        // A cached event retains its original timestamp and is still rejected
+        // if stale. A restart never changes the saved fix's date or accuracy.
+        // https://developer.apple.com/documentation/corelocation/cllocationmanager/startupdatinglocation()
+        manager.stopUpdatingLocation()
+        manager.startUpdatingLocation()
     }
 
     private func received(_ locations: [CLLocation]) {
@@ -93,7 +120,11 @@ import Foundation
         fix = nil
         let denied = (error as? CLError)?.code == .denied
         status = denied ? "Mac location permission was denied" : "Mac location is temporarily unavailable"
-        if denied { manager.stopUpdatingLocation() }
+        if denied {
+            refreshTimer?.cancel()
+            refreshTimer = nil
+            manager.stopUpdatingLocation()
+        }
     }
 }
 
