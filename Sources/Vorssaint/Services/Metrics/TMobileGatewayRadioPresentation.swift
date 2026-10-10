@@ -100,4 +100,3 @@ enum TMobileGatewayRadioPresentation {
         "\(value.formatted(.number.precision(.fractionLength(0...1)))) \(unit)"
     }
 }
-
