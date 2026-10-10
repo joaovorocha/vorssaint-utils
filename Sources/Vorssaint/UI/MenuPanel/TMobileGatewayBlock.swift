@@ -53,6 +53,8 @@ struct TMobileGatewayBlock: View {
                     }.buttonStyle(.bordered).controlSize(.small)
                     Button("Wi-Fi & router settings…") { TMobileWiFiSettingsWindow.shared.show() }
                         .buttonStyle(.bordered).controlSize(.small)
+                    Button("Advanced radio & tower info…") { TMobileCellTelemetryWindow.shared.show() }
+                        .buttonStyle(.bordered).controlSize(.small)
                 }
             }
         }
@@ -105,10 +107,9 @@ struct TMobileGatewayBlock: View {
     private func readings(_ snapshot: TMobileGatewaySnapshot) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                Text(snapshot.model ?? strings.unknown)
-                    .fontWeight(.medium)
+                if let model = snapshot.model { Text(model).fontWeight(.medium) }
                 Spacer(minLength: 0)
-                Text(registration(snapshot.registration))
+                if let state = snapshot.registration { Text(registration(state)) }
                 if snapshot.roaming == true { Text(strings.roaming) }
             }
             .font(.system(size: 10.5))
@@ -147,10 +148,6 @@ struct TMobileGatewayBlock: View {
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
             }
-            Text(strings.usageUnavailable)
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -158,7 +155,7 @@ struct TMobileGatewayBlock: View {
         switch value?.lowercased() {
         case "registered": return strings.registered
         case "not registered", "notregistered", "unregistered", "searching": return strings.notRegistered
-        default: return strings.unknown
+        default: return value ?? ""
         }
     }
 
@@ -232,6 +229,8 @@ struct TMobileGatewayBlock: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(section.title).font(.system(size: 11.5, weight: .semibold))
             ForEach(section.rows) { row in detail(row) }
+            TMobileTowerReferenceView(radio: section.radio, isFiveG: section.id == "fiveG",
+                                     eNodeBID: section.radio.eNodeBID, ecgi: section.radio.ecgi)
         }
         .font(.system(size: 11))
         .monospacedDigit()
@@ -345,7 +344,7 @@ private struct TMobileSignalBars: View {
     }
 }
 
-private extension TMobileSignalQuality {
+extension TMobileSignalQuality {
     func presentationColor(for scheme: ColorScheme) -> Color {
         switch self {
         case .excellent, .good: return PanelMetricColor.green(for: scheme)
@@ -395,11 +394,9 @@ private struct TMobileGatewayTipsView: View {
             }
         }.padding(20).frame(width: 590, height: 660)
     }
-    private func guideReading(_ label: String, radio: TMobileRadioSignal?, metric: TMobileSignalMetric) -> some View {
-        let value: Double? = {
-            switch metric { case .rsrp: return radio?.rsrp; case .rsrq: return radio?.rsrq; case .rssi: return radio?.rssi; case .sinr: return radio?.sinr }
-        }()
-        let quality = TMobileGatewayDiagnostics.quality(for: value, metric: metric)
-        return Text("\(label): \(value.map { "\($0.formatted()) \(metric.unit)" } ?? "Not reported")\(quality == .unknown ? "" : " · " + quality.label)")
+    @ViewBuilder private func guideReading(_ label: String, radio: TMobileRadioSignal?, metric: TMobileSignalMetric) -> some View {
+        if let radio, let row = TMobileGatewayRadioPresentation.measurementRow(radio, metric: metric) {
+            Text("\(label): \(row.value)\(row.qualityLabel.map { " · " + $0 } ?? "")")
+        }
     }
 }

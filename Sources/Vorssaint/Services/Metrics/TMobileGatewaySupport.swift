@@ -28,15 +28,20 @@ struct TMobileRadioSignal: Equatable, Codable {
     let trackingAreaCode: UInt32?
     let cqi: Int?
     let gNodeBID: UInt32?
+    let eNodeBID: UInt32?
+    let ecgi: String?
+    let supportedBands: [String]?
 
     init(bars: Int?, bands: [String], rsrp: Double?, rsrq: Double?, rssi: Double?, sinr: Double?,
          cellID: UInt64? = nil, antenna: String? = nil, bandwidthMHz: Double? = nil,
          channel: Int? = nil, physicalCellID: Int? = nil, trackingAreaCode: UInt32? = nil,
-         cqi: Int? = nil, gNodeBID: UInt32? = nil) {
+         cqi: Int? = nil, gNodeBID: UInt32? = nil, eNodeBID: UInt32? = nil,
+         ecgi: String? = nil, supportedBands: [String]? = nil) {
         self.bars = bars; self.bands = bands; self.rsrp = rsrp; self.rsrq = rsrq
         self.rssi = rssi; self.sinr = sinr; self.cellID = cellID; self.antenna = antenna
         self.bandwidthMHz = bandwidthMHz; self.channel = channel; self.physicalCellID = physicalCellID
         self.trackingAreaCode = trackingAreaCode; self.cqi = cqi; self.gNodeBID = gNodeBID
+        self.eNodeBID = eNodeBID; self.ecgi = ecgi; self.supportedBands = supportedBands
     }
 }
 
@@ -154,11 +159,17 @@ enum TMobileGatewaySupport {
               optional(radio.physicalCellID, { (0...(isFiveG ? 1007 : 503)).contains($0) }),
               optional(radio.trackingAreaCode, { $0 <= (isFiveG ? 0xFFFFFF : 0xFFFF) }),
               optional(radio.cqi, { (0...30).contains($0) }),
-              isFiveG || radio.gNodeBID == nil else { return false }
+              optional(radio.eNodeBID, { $0 <= 0xFFFFFFF }),
+              optional(radio.ecgi, { cellGlobalIdentity($0) == $0 }),
+              optional(radio.supportedBands, { $0.count <= 32 && Set($0).count == $0.count
+                  && $0.allSatisfy { band($0, isFiveG: isFiveG) == $0 } }),
+              isFiveG || radio.gNodeBID == nil,
+              !isFiveG || radio.eNodeBID == nil else { return false }
         return radio.bars != nil || !radio.bands.isEmpty || radio.rsrp != nil || radio.rsrq != nil
             || radio.rssi != nil || radio.sinr != nil || radio.cellID != nil || radio.antenna != nil
             || radio.bandwidthMHz != nil || radio.channel != nil || radio.physicalCellID != nil
             || radio.trackingAreaCode != nil || radio.cqi != nil || radio.gNodeBID != nil
+            || radio.eNodeBID != nil || radio.ecgi != nil || radio.supportedBands?.isEmpty == false
     }
 
     private static func optional<T>(_ value: T?, _ predicate: (T) -> Bool) -> Bool {
@@ -183,8 +194,11 @@ enum TMobileGatewaySupport {
         let rssi = measurement(object["rssi"], range: -160 ... 0)
         let sinr = measurement(object["sinr"], range: -40 ... 80)
         let cellID = integer(object["cid"] ?? sector["cid"], maximum: isFiveG ? 0xFFFFFFFFF : 0xFFFFFFF)
-        let antenna = text(object["antennaUsed"]).flatMap {
-            ["internal": "Internal", "external": "External"][$0.lowercased()]
+        let antenna: String?
+        switch text(object["antennaUsed"])?.lowercased() {
+        case "internal": antenna = "Internal"
+        case "external": antenna = "External"
+        default: antenna = nil
         }
         let bandwidth = bandwidth(object["bandwidth"])
         let channel = integer(object["earfcn"] ?? object["arfcn"] ?? object["nrarfcn"],
@@ -192,15 +206,42 @@ enum TMobileGatewaySupport {
         let pci = integer(object["pci"], maximum: isFiveG ? 1007 : 503).map(Int.init)
         let tac = integer(object["tac"], maximum: isFiveG ? 0xFFFFFF : 0xFFFF).map(UInt32.init)
         let cqi = integer(object["cqi"], maximum: 30).map(Int.init)
-        let gNodeBID = isFiveG
-            ? integer(object["gNBID"] ?? sector["gNBID"], maximum: UInt64(UInt32.max)).map(UInt32.init) : nil
+        let gNodeBID: UInt32? = isFiveG
+            ? integer(object["gNBID"] ?? sector["gNBID"], maximum: UInt64(UInt32.max)).map { UInt32($0) } : nil
+        let eNodeBValue: Any? = object["eNBID"] ?? object["eNodeBID"] ?? sector["eNBID"]
+        let eNodeBID: UInt32? = !isFiveG
+            ? integer(eNodeBValue, maximum: 0xFFFFFFF).map { UInt32($0) } : nil
+        let ecgi = cellGlobalIdentity(object["ecgi"] ?? object["ECGI"])
+        var supportedBands: [String] = []
+        for value in ((object["supportedBands"] as? [Any]) ?? []).prefix(32) {
+            if let band = band(value, isFiveG: isFiveG), !supportedBands.contains(band) { supportedBands.append(band) }
+        }
         guard bars != nil || !bands.isEmpty || rsrp != nil || rsrq != nil || rssi != nil || sinr != nil
             || cellID != nil || antenna != nil || bandwidth != nil || channel != nil || pci != nil
-            || tac != nil || cqi != nil || gNodeBID != nil
+            || tac != nil || cqi != nil || gNodeBID != nil || eNodeBID != nil || ecgi != nil || !supportedBands.isEmpty
         else { return nil }
         return TMobileRadioSignal(bars: bars, bands: bands, rsrp: rsrp, rsrq: rsrq, rssi: rssi, sinr: sinr,
                                   cellID: cellID, antenna: antenna, bandwidthMHz: bandwidth, channel: channel,
-                                  physicalCellID: pci, trackingAreaCode: tac, cqi: cqi, gNodeBID: gNodeBID)
+                                  physicalCellID: pci, trackingAreaCode: tac, cqi: cqi, gNodeBID: gNodeBID,
+                                  eNodeBID: eNodeBID, ecgi: ecgi, supportedBands: supportedBands.isEmpty ? nil : supportedBands)
+    }
+
+    /// Preserve a returned identity for display/exact local reference matching.
+    /// No bit masking, PLMN split or geographic inference is applied.
+    private static func cellGlobalIdentity(_ value: Any?) -> String? {
+        let candidate: String?
+        if value is String { candidate = text(value) }
+        else { candidate = integer(value, maximum: UInt64.max).map(String.init) }
+        guard let candidate, !candidate.isEmpty, candidate.utf8.count <= 64,
+              candidate.utf8.contains(where: { (48...57).contains($0) }) else { return nil }
+        let digits = candidate.lowercased().hasPrefix("0x") ? candidate.dropFirst(2) : candidate[...]
+        let components = digits.split(whereSeparator: { $0 == "-" || $0 == ":" })
+        guard !digits.isEmpty, digits.first != "-", digits.first != ":", digits.last != "-", digits.last != ":",
+              !digits.contains("--"), !digits.contains("::"), !digits.contains("-:"), !digits.contains(":-"),
+              components.contains(where: { $0.contains(where: { $0 != "0" }) }),
+              digits.utf8.allSatisfy({ (48...57).contains($0) || (65...70).contains($0)
+                  || (97...102).contains($0) || $0 == 45 || $0 == 58 }) else { return nil }
+        return candidate
     }
 
     private static func band(_ value: Any?, isFiveG: Bool) -> String? {

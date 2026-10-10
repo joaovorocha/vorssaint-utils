@@ -8,10 +8,42 @@ enum TMobileGatewayTests {
         addresses(suite)
         parsing(suite)
         radioDetails(suite)
+        explicitNodeMetadata(suite)
         diagnostics(suite)
         suite.expect((0...5).map { TMobileGatewaySupport.pollingDelay(errorStreak: $0) }
                      == [15, 30, 60, 120, 120, 120], "gateway polling backs off with a 120-second limit")
         MainActor.assumeIsolated { transport(suite) }
+    }
+
+    private static func explicitNodeMetadata(_ suite: TestSuite) {
+        let fixture = #"{"signal":{"4g":{"eNodeBID":123,"ecgi":"001-01-12345","supportedBands":["B2","b66","b66","n41"]},"5g":{"cid":21,"gNBID":456,"eNBID":789,"ecgi":"0x310260ABCDEF","supportedBands":["n25","n41","b2"]}}}"#
+        let parsed = try? TMobileGatewaySupport.parse(Data(fixture.utf8))
+        suite.expect(parsed?.lte?.eNodeBID == 123 && parsed?.lte?.gNodeBID == nil
+                     && parsed?.fiveG?.gNodeBID == 456 && parsed?.fiveG?.eNodeBID == nil,
+                     "reported LTE and NR node identities stay technology-specific")
+        suite.expect(parsed?.lte?.ecgi == "001-01-12345" && parsed?.fiveG?.ecgi == "0x310260ABCDEF",
+                     "opaque global-cell identity text retains leading zeroes and reported format")
+        suite.expect(parsed?.lte?.supportedBands == ["b2", "b66"] && parsed?.fiveG?.supportedBands == ["n25", "n41"]
+                     && parsed?.lte?.bands.isEmpty == true && parsed?.fiveG?.bands.isEmpty == true,
+                     "supported inventory is validated independently without inventing active bands")
+        suite.expect(TMobileGatewayConnectedRadioSupport.select(from: parsed) == nil,
+                     "node metadata and capability inventory do not create a connected menu indicator")
+        let encoded = parsed.flatMap { try? JSONEncoder().encode($0) }
+        suite.expect(encoded.flatMap { try? JSONDecoder().decode(TMobileGatewaySnapshot.self, from: $0) } == parsed,
+                     "optional node metadata round-trips with the existing local archive model")
+        for bad in ["0", "--", "1::2", "x123", "1.5", "private text", String(repeating: "1", count: 65)] {
+            let data = try! JSONSerialization.data(withJSONObject: ["signal": ["4g": ["bands": ["b2"], "ecgi": bad, "eNBID": 268435456]]])
+            let rejected = try? TMobileGatewaySupport.parse(data)
+            suite.expect(rejected?.lte?.ecgi == nil && rejected?.lte?.eNodeBID == nil,
+                         "malformed global identities and overflowing LTE node IDs remain unavailable")
+        }
+        for invalid in [#"{"fiveG":{"bands":["n41"],"eNodeBID":12}}"#,
+                        #"{"lte":{"bands":["b2"],"supportedBands":["n41"]}}"#,
+                        #"{"lte":{"bands":["b2"],"ecgi":"--"}}"#] {
+            let archived = try? JSONDecoder().decode(TMobileGatewaySnapshot.self, from: Data(invalid.utf8))
+            suite.expect(archived.map(TMobileGatewaySupport.isValidSnapshot) == false,
+                         "edited archives cannot bypass typed node, identity and inventory validation")
+        }
     }
 
     private static func radioDetails(_ suite: TestSuite) {

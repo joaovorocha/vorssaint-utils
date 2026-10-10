@@ -7,7 +7,7 @@ import Foundation
 /// independent of SwiftUI makes absence and legitimate zero readings testable.
 enum TMobileGatewayRadioPresentation {
     enum Field: String, CaseIterable {
-        case bars, bands, rsrp, rsrq, rssi, sinr, antenna, bandwidth, channel, pci, tac, cqi, gNodeBID, cellID
+        case bars, bands, rsrp, rsrq, rssi, sinr, antenna, bandwidth, channel, pci, tac, cqi, gNodeBID, eNodeBID, cellID, ecgi, supportedBands
     }
 
     struct Row: Identifiable, Equatable {
@@ -70,7 +70,12 @@ enum TMobileGatewayRadioPresentation {
         append(.tac, "TAC", radio.trackingAreaCode.map(String.init))
         append(.cqi, "CQI", radio.cqi.map(String.init))
         if isFiveG { append(.gNodeBID, "gNB ID", radio.gNodeBID.map(String.init)) }
+        else { append(.eNodeBID, "eNB ID", radio.eNodeBID.map(String.init)) }
         append(.cellID, "Cell ID", radio.cellID.map(String.init))
+        append(.ecgi, "ECGI", radio.ecgi)
+        if let inventory = radio.supportedBands, !inventory.isEmpty {
+            append(.supportedBands, "Supported bands (capability)", inventory.joined(separator: ", "))
+        }
         return result
     }
 

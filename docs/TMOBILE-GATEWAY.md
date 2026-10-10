@@ -1,8 +1,9 @@
 # T-Mobile gateway monitor
 
-For beta.4's combined menu bar indicator and complete dropdown readings, see
+For the combined menu bar indicator and available dropdown readings, see
 [Connected radio and dropdown metrics](TMOBILE-INDICATOR.md). Administrator
 Wi-Fi controls are described separately in [Wi-Fi and router settings](TMOBILE-WIFI.md).
+Beta.5 adds an optional session for [advanced radio and local tower details](TMOBILE-RADIO-INSIGHTS.md).
 
 Vorssaint can show signal and connection status from a compatible T-Mobile
 G4AR gateway on the Mac’s local network. This optional feature reads the
@@ -42,7 +43,7 @@ The network panel’s T-Mobile block shows the available device model, firmware
 and uptime, plus separate LTE and 5G signal readings: RSRP, RSRQ, RSSI, SINR,
 bands and signal bars. Network
 registration and roaming status are shown when the gateway reports them. Fields
-that the firmware omits remain unavailable or unknown; missing values are never
+that the firmware omits are hidden; missing values are never
 treated as zero or as a successful connection.
 
 Polling runs while the enabled network panel is visible or the menu bar
@@ -62,7 +63,7 @@ show an unavailable or error state. Check the address, local connection and
 macOS permission before retrying.
 
 The local endpoint does not provide verified plan or billing usage, so the
-panel explicitly marks plan usage as unavailable. This feature does not read
+panel omits plan usage. This feature does not read
 connected clients, SIM identifiers or GPS data, and it does not change router
 settings, restart the gateway or send other router writes. The separate Wi-Fi
 window uses an explicit administrator session and reviewed changes.

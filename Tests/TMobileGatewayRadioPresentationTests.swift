@@ -17,9 +17,10 @@ enum TMobileGatewayRadioPresentationTests {
 
         let full = TMobileRadioSignal(bars: 4, bands: ["n41"], rsrp: -95, rsrq: -10, rssi: -65, sinr: 13,
                                       cellID: 1234, antenna: "Internal", bandwidthMHz: 100, channel: 520_000,
-                                      physicalCellID: 12, trackingAreaCode: 34, cqi: 15, gNodeBID: 56)
+                                      physicalCellID: 12, trackingAreaCode: 34, cqi: 15, gNodeBID: 56,
+                                      ecgi: "001-01-1234", supportedBands: ["n25", "n41"])
         let fullRows = TMobileGatewayRadioPresentation.rows(full, isFiveG: true)
-        suite.expect(Set(fullRows.map(\.id)) == Set(TMobileGatewayRadioPresentation.Field.allCases),
+        suite.expect(Set(fullRows.map(\.id)) == Set(TMobileGatewayRadioPresentation.Field.allCases.filter { $0 != .eNodeBID }),
                      "a complete NR fixture exposes every supported radio field exactly once")
         suite.expect(fullRows.count == Set(fullRows.map(\.id)).count,
                      "each available radio field has one stable row identity")
@@ -34,6 +35,11 @@ enum TMobileGatewayRadioPresentationTests {
         suite.expect(lteOnly.map(\.id) == ["lte"]
                      && lteOnly.first?.rows.contains(where: { $0.id == .gNodeBID }) == false,
                      "an LTE-only fixture hides 5G and omits inapplicable gNB rows")
+        let explicitLTE = TMobileRadioSignal(bars: nil, bands: [], rsrp: nil, rsrq: nil, rssi: nil, sinr: nil, eNodeBID: 123)
+        suite.expect(TMobileGatewayRadioPresentation.rows(explicitLTE, isFiveG: false).map(\.id) == [.eNodeBID],
+                     "an explicitly reported LTE node ID creates one available row")
+        suite.expect(fullRows.first(where: { $0.id == .supportedBands })?.label.contains("capability") == true,
+                     "supported band inventory is explicitly distinguished from connected bands")
         suite.expect(TMobileGatewayRadioPresentation.sections(snapshot(lte: full, fiveG: full)).map(\.id)
                      == ["fiveG", "lte"], "both reported radios keep a stable display order")
 
