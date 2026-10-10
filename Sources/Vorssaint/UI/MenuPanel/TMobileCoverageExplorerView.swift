@@ -48,6 +48,9 @@ struct TMobileCoverageExplorerView: View {
     private var hasModeledSignal: Bool {
         referenceOverlays.contains { $0.modeledSignalDBm?.contains(where: { $0 != nil }) == true }
     }
+    private var showsCommunityAttribution: Bool {
+        showTowers && towers.contains { $0.provenance?.localizedCaseInsensitiveContains("opencellid") == true }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -112,7 +115,7 @@ struct TMobileCoverageExplorerView: View {
                                   selectedTowerID: selectedTowerID,
                                   onTowerSelected: { selectedTowerID = $0 },
                                   showsMeasurements: showsMeasurements,
-                                  canvasHeight: max(220, height - 171),
+                                  canvasHeight: max(220, height - (showsCommunityAttribution ? 193 : 171)),
                                   showsExplanations: false,
                                   initialRegion: initialRegion,
                                   onRegionChanged: onRegionChanged)
@@ -166,6 +169,12 @@ struct TMobileCoverageExplorerView: View {
                 Image(systemName: "mappin.circle.fill").foregroundStyle(.purple)
                 Text("Pins are unverified references. Select one for coordinates and reported bands.")
                     .foregroundStyle(.secondary)
+            }
+            if showsCommunityAttribution {
+                HStack(spacing: 8) {
+                    Link("Cell data: OpenCelliD", destination: TMobileTowerMapPresentation.openCellIDSource)
+                    Link("CC BY-SA 4.0", destination: TMobileTowerMapPresentation.openCellIDLicense)
+                }
             }
         }
         .font(.caption)
