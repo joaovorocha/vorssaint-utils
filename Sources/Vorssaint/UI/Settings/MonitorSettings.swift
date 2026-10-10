@@ -411,13 +411,11 @@ private struct MenuBarMetricTile: View {
     @AppStorage(DefaultsKey.menuBarMemoryStyle) private var memoryStyle = "percent"
     @AppStorage(DefaultsKey.menuBarNetworkUploadFirst) private var uploadFirst = false
     @AppStorage(DiskMenuBarStyle.defaultsKey) private var diskStyle = DiskMenuBarStyle.percent
-    @AppStorage private var gatewaySignalStyle: String
+    @AppStorage(DefaultsKey.tMobileMenuBarComponents) private var gatewayComponents = 7
 
     init(metric: MenuBarMetric) {
         self.metric = metric
         _shown = AppStorage(wrappedValue: false, metric.defaultsKey)
-        _gatewaySignalStyle = AppStorage(wrappedValue: "bars",
-            metric.tMobileReading?.signalStyleDefaultsKey ?? DefaultsKey.tMobileLTEMenuBarSignalStyle)
     }
 
     var body: some View {
@@ -428,7 +426,7 @@ private struct MenuBarMetricTile: View {
     /// What the reading's option makes the menu bar show, in its own terms.
     private var optionsSummary: String {
         if metric.tMobileReading != nil {
-            return "Connected band & signal"
+            return TMobileGatewayMenuBarComponents.sanitized(gatewayComponents).summary
         }
         switch metric {
         case .memory:
@@ -447,10 +445,20 @@ private struct MenuBarMetricTile: View {
 
     private var options: AnyView? {
         if metric.tMobileReading != nil {
-            return AnyView(Text("Shows LTE or 5G, signal strength and bands in the menu bar. Open its menu for detailed radio readings.")
-                .font(.callout)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading))
+            return AnyView(VStack(alignment: .leading, spacing: 10) {
+                gatewayComponentToggle("Technology", component: .technology)
+                gatewayComponentToggle("Signal bars", component: .bars)
+                gatewayComponentToggle("Bands", component: .bands)
+                Text("Technology shows LTE, 5G or 5G UC for the current connection. UC is inferred from reported bands.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Keep at least one selected. Use the T-Mobile checkmark to hide the item.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading))
         }
         switch metric {
         case .memory:
@@ -474,6 +482,18 @@ private struct MenuBarMetricTile: View {
         default:
             return nil
         }
+    }
+
+    private func gatewayComponentToggle(_ title: String,
+                                        component: TMobileGatewayMenuBarComponents) -> some View {
+        let selected = TMobileGatewayMenuBarComponents.sanitized(gatewayComponents)
+        return Toggle(title, isOn: Binding(
+            get: { TMobileGatewayMenuBarComponents.sanitized(gatewayComponents).contains(component) },
+            set: { gatewayComponents = TMobileGatewayMenuBarComponents.sanitized(gatewayComponents)
+                .setting(component, enabled: $0).rawValue }))
+            .toggleStyle(.checkbox)
+            .disabled(selected == component)
+            .help(selected == component ? "Keep at least one selected, or hide the T-Mobile item with its checkmark." : title)
     }
 }
 

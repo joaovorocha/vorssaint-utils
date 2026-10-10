@@ -3,6 +3,44 @@
 
 import Foundation
 
+/// Visual choices for the one connected-radio item. They never change which
+/// radio is selected, the polling opt-in, or its complete spoken description.
+struct TMobileGatewayMenuBarComponents: OptionSet {
+    let rawValue: Int
+    static let defaultsKey = "tMobileMenuBarComponents"
+    static let technology = Self(rawValue: 1)
+    static let bars = Self(rawValue: 2)
+    static let bands = Self(rawValue: 4)
+    static let all: Self = [.technology, .bars, .bands]
+
+    static func sanitized(_ rawValue: Int) -> Self {
+        (1...all.rawValue).contains(rawValue) ? Self(rawValue: rawValue) : .all
+    }
+
+    static var current: Self {
+        sanitized(UserDefaults.standard.integer(forKey: defaultsKey))
+    }
+
+    func setting(_ component: Self, enabled: Bool) -> Self {
+        let current = Self.sanitized(rawValue)
+        let next = enabled ? current.union(component) : current.subtracting(component)
+        // The main item checkmark owns hiding the entire item.
+        return next.isEmpty ? current : Self.sanitized(next.rawValue)
+    }
+
+    var summary: String {
+        switch Self.sanitized(rawValue) {
+        case .technology: return "Technology only"
+        case .bars: return "Signal bars only"
+        case .bands: return "Bands only"
+        case [.technology, .bars]: return "Technology & bars"
+        case [.technology, .bands]: return "Technology & bands"
+        case [.bars, .bands]: return "Bars & bands"
+        default: return "Technology, bars & bands"
+        }
+    }
+}
+
 /// Legacy reading identities retained for saved preferences and detail routing.
 /// The menu bar now renders one connected-radio indicator.
 enum TMobileGatewayMenuBarReading: String, CaseIterable {

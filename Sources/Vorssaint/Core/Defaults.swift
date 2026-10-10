@@ -382,6 +382,7 @@ enum DefaultsKey {
     static let menuBarTMobileLTE = "menuBarTMobileLTE"
     static let menuBarTMobile5G = "menuBarTMobile5G"
     static let tMobileUnifiedMenuBarMigrated = "tMobileUnifiedMenuBarMigrated"
+    static let tMobileMenuBarComponents = "tMobileMenuBarComponents" // technology 1 | bars 2 | bands 4
     static let menuBarTMobileLTEBands = "menuBarTMobileLTEBands"
     static let menuBarTMobile5GBands = "menuBarTMobile5GBands"
     static let menuBarTMobileLTERSRP = "menuBarTMobileLTERSRP"
@@ -1621,6 +1622,7 @@ enum Defaults {
         DefaultsKey.menuBarBatteryTime: false,
         DefaultsKey.menuBarTMobileLTE: false,
         DefaultsKey.menuBarTMobile5G: false,
+        DefaultsKey.tMobileMenuBarComponents: 7,
         DefaultsKey.menuBarTMobileLTEBands: false,
         DefaultsKey.menuBarTMobile5GBands: false,
         DefaultsKey.menuBarTMobileLTERSRP: false,
