@@ -9,5 +9,5 @@ task_sdk="$(xcrun --sdk macosx --show-sdk-path)"
 xcrun --sdk macosx swiftc -Onone -j 1 -disable-batch-mode -sdk "$task_sdk" -module-cache-path "$task_temp/ModuleCache" \
     Sources/Vorssaint/Services/Metrics/FCCCoverageSupport.swift \
     Sources/Vorssaint/Services/Metrics/FCCCoverageClient.swift \
-    Tests/FCCCoverageClientTests.swift -o "$task_temp/tests"
+    Tests/Fixtures/FCCCoverageClientHarness.swift -o "$task_temp/tests"
 "$task_temp/tests"

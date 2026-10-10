@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Shadow Utilities
+- Adds T-Mobile FCC coverage checks for U.S. states and territories, secure local token storage, and raw GeoPackage downloads with bounded map-area import.
+- Labels FCC availability dates, modeled categories and file provenance separately from recorded measurements; keeps legacy GeoJSON references readable.
+
 ## [3.4.1] - 2026-10-08
 
 ### Summary

@@ -22,10 +22,8 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
     @State private var latitude = ""
     @State private var longitude = ""
     @State private var importTowers = false
-    @State private var importFCC = false
     @State private var editTower = false
     @State private var deletingSession = false
-    @State private var fccDate = ""
     @State private var showFCC = true
     @State private var showTowers = true
     @State private var lookupRegion: MKCoordinateRegion?
@@ -49,7 +47,7 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
     }
     private var overlays: [TMobileCoverageMapReferenceOverlay] {
         guard showFCC, let layer = references.layer else { return [] }
-        return [.init(id: layer.id, title: layer.title, provenance: "Imported FCC carrier-reported model · source declared by owner", polygons: layer.polygons)]
+        return [.init(id: layer.id, title: layer.title, provenance: layer.provenance, polygons: layer.polygons)]
     }
     private struct MapReferenceKey: Hashable {
         let latitude: Double
@@ -104,9 +102,6 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
         .onChange(of: selected?.id) { _, _ in latitude = ""; longitude = "" }
         .fileImporter(isPresented: $importTowers, allowedContentTypes: [.json, .commaSeparatedText]) { result in
             if case .success(let url) = result { pins.importTowers(from: url) }
-        }
-        .fileImporter(isPresented: $importFCC, allowedContentTypes: [.json, UTType(filenameExtension: "geojson") ?? .json]) { result in
-            if case .success(let url) = result { references.importLayer(from: url, publishedDate: fccDate) }
         }
         .sheet(isPresented: $editTower) { TMobileCoordinateEditor(measurement: false) }
         .confirmationDialog("Delete this saved session and its measurements?", isPresented: $deletingSession, titleVisibility: .visible) {
@@ -355,15 +350,7 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
                 Text("Cell positions · geometry unchanged").foregroundStyle(.secondary)
             }.font(.caption)
             Divider()
-            Text("FCC reference coverage").font(.headline)
-            Text("Import an area’s Polygon/MultiPolygon GeoJSON and enter its publication date. Coverage is a carrier-reported propagation model, separate from your measured signal. The file’s origin is declared by you; the app does not verify it against FCC.")
-                .font(.caption).foregroundStyle(.secondary)
-            HStack {
-                TextField("Dataset date · YYYY-MM-DD", text: $fccDate).textFieldStyle(.roundedBorder).frame(maxWidth: 240)
-                Button("Import FCC GeoJSON…") { importFCC = true }.disabled(!TMobileCoverageReferenceSupport.validDate(fccDate))
-                if references.layer != nil { Button("Remove reference") { references.removeLayer() } }
-            }
-            if let layer = references.layer { Text("\(layer.title) · \(layer.polygons.count) polygons").font(.caption) }
+            TMobileFCCCoverageView(region: lookupRegion)
             HStack {
                 Link("FCC coverage map", destination: URL(string: "https://broadbandmap.fcc.gov/")!)
                 Link("FCC reference map", destination: URL(string: "https://fcc.maps.arcgis.com/apps/webappviewer/index.html?id=6c1b2e73d9d749cdb7bc88a0d1bdd25b")!)

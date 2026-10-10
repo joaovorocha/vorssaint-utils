@@ -10,6 +10,13 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Keep both release and test compilation within the owner's two-worker limit.
+BUILD_JOBS="${BUILD_JOBS:-2}"
+if [[ "$BUILD_JOBS" != 1 && "$BUILD_JOBS" != 2 ]]; then
+    echo "BUILD_JOBS must be 1 or 2" >&2
+    exit 1
+fi
+
 # The icon catalog and the bundle are staged in temp dirs; sweep both however
 # the script ends.
 ICON_TMP=""
@@ -571,6 +578,8 @@ if (( TEST )); then
         Sources/Vorssaint/Services/Metrics/TMobileCoverageStore.swift
         Sources/Vorssaint/Services/Metrics/TMobileCoverageParkedSupport.swift
         Sources/Vorssaint/Services/Metrics/TMobileCoverageReferenceSupport.swift
+        Sources/Vorssaint/Services/Metrics/TMobileFCCReferenceSource.swift
+        Sources/Vorssaint/Services/Metrics/FCCCoverageSupport.swift
         Sources/Vorssaint/UI/MenuPanel/TMobileCoverageMapView.swift
         Sources/Vorssaint/UI/MenuPanel/TMobileCoverageChartsView.swift
         Sources/Vorssaint/Services/Metrics/TMobileGatewayService.swift
@@ -615,7 +624,7 @@ if (( TEST )); then
     TEST_OUTPUT_FILE_MAP="$TEST_OBJECT_DIR/output-file-map.json"
     write_swift_output_file_map "$TEST_OUTPUT_FILE_MAP" "$TEST_OBJECT_DIR" "${TEST_SOURCES[@]}"
     echo "▸ Building & running tests against $(basename "$SDK")…"
-    swiftc -Onone -incremental -enable-batch-mode -j "$(sysctl -n hw.logicalcpu)" \
+    swiftc -Onone -incremental -enable-batch-mode -j "$BUILD_JOBS" \
         -module-name VorssaintTests -output-file-map "$TEST_OUTPUT_FILE_MAP" \
         -target "$TARGET" -sdk "$SDK" "${SDK_COMPAT_FLAGS[@]}" \
         "${VM_STATISTICS_COMPAT_FLAGS[@]}" "${BUILD_VARIANT_FLAGS[@]}" "${TEST_SOURCES[@]}" -o build/metrics-tests
@@ -650,9 +659,9 @@ APP_OUTPUT_FILE_MAP="$APP_OBJECT_DIR/output-file-map.json"
 write_swift_output_file_map "$APP_OUTPUT_FILE_MAP" "$APP_OBJECT_DIR" "${APP_SOURCES[@]}"
 # Without -j the driver compiles one file at a time, and without batch mode
 # each file's compiler parses the whole module again: a clean release took a
-# quarter of an hour. Batches share that work and run on every core, and the
+# quarter of an hour. Batches share that work with bounded parallelism, and the
 # optimization stays per file, as before.
-swiftc "${APP_OPTIMIZATION_FLAGS[@]}" -incremental -enable-batch-mode -j "$(sysctl -n hw.logicalcpu)" \
+swiftc "${APP_OPTIMIZATION_FLAGS[@]}" -incremental -enable-batch-mode -j "$BUILD_JOBS" \
     -output-file-map "$APP_OUTPUT_FILE_MAP" \
     -target "$TARGET" -sdk "$SDK" "${SDK_COMPAT_FLAGS[@]}" "${VM_STATISTICS_COMPAT_FLAGS[@]}" "${HID_EVENT_SYSTEM_FLAGS[@]}" \
     "${BUILD_VARIANT_FLAGS[@]}" \
