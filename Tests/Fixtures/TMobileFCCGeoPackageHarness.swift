@@ -352,6 +352,11 @@ private func selection(_ environment: Int = 0, layer: String = "fcc_raw", techno
         let result = try FCC.extract(url: url, bounds: area, selection: selected)
         let parsed = try TMobileCoverageReferenceSupport.parse(result.geoJSON, publishedDate: "2025-12-31")
         suite.expect(result.metadata.featureCount > 0 && parsed.polygons.count == result.metadata.polygonCount, "official regional extraction passes the actual existing GeoJSON importer")
+        let signals = parsed.modeledSignalDBm?.compactMap { $0 } ?? []
+        suite.expect(parsed.modeledSignalDBm?.count == parsed.polygons.count && !signals.isEmpty,
+                     "official minimum signal survives extraction aligned with polygon components")
+        suite.expect(signals.allSatisfy { $0.isFinite && (-120 ... -50).contains($0) } && Set(signals).count > 1,
+                     "official model contains valid varying RSRP rather than invented uniform strength")
         suite.expect(result.geoJSON.count <= 5_000_000 && result.metadata.polygonCount <= 1_000 && result.metadata.coordinateCount <= 100_000, "official extraction respects all bounded importer limits")
         suite.expect(result.metadata.selection.environment == 2 && result.metadata.bounds == area, "official extraction records explicit derived category and requested bounds")
         let after = try FileManager.default.attributesOfItem(atPath: url.path)
