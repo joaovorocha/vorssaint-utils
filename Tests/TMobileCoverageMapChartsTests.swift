@@ -107,6 +107,26 @@ enum TMobileCoverageMapChartsTests {
         let slightCorrection = observation(30, speed: test, corrections: [.init(coordinate: .init(latitude: 40.0001, longitude: -100), correctedAt: epoch)])
         suite.expect(TMobileCoverageMapDrawing.coordinate(for: slightCorrection, metric: .speed) == fix.coordinate,
                      "speed map preserves test coordinates even after a nearby observation correction")
+        let preciseEnd = TMobileCoverageLocationFix(coordinate: coordinate, timestamp: test.endedAt,
+                                                    horizontalAccuracy: 20, source: .mac)
+        let oldEnd = TMobileCoverageLocationFix(coordinate: coordinate, timestamp: test.endedAt.addingTimeInterval(-31),
+                                                horizontalAccuracy: 20, source: .mac)
+        let staleSpeed = TMobileCoverageSpeedResult(startedAt: epoch, endedAt: test.endedAt,
+                                                    startLocation: fix, endLocation: oldEnd, downloadMbps: 75)
+        suite.expect(TMobileCoverageMapDrawing.coordinate(for: observation(30, speed: staleSpeed), metric: .speed) == nil,
+                     "speed map rejects an endpoint fix older than 30 seconds even within radio-map tolerance")
+        let coarseEnd = TMobileCoverageLocationFix(coordinate: coordinate, timestamp: test.endedAt,
+                                                   horizontalAccuracy: 101, source: .mac)
+        let coarseSpeed = TMobileCoverageSpeedResult(startedAt: epoch, endedAt: test.endedAt,
+                                                     startLocation: fix, endLocation: coarseEnd, downloadMbps: 75)
+        suite.expect(TMobileCoverageMapDrawing.coordinate(for: observation(30, speed: coarseSpeed), metric: .speed) == nil,
+                     "speed map rejects accuracy worse than 100 metres even within radio-map tolerance")
+        let boundaryStart = TMobileCoverageLocationFix(coordinate: coordinate, timestamp: epoch.addingTimeInterval(-30),
+                                                        horizontalAccuracy: 100, source: .mac)
+        let boundarySpeed = TMobileCoverageSpeedResult(startedAt: epoch, endedAt: test.endedAt,
+                                                       startLocation: boundaryStart, endLocation: preciseEnd, downloadMbps: 75)
+        suite.expect(TMobileCoverageMapDrawing.coordinate(for: observation(30, speed: boundarySpeed), metric: .speed) == coordinate,
+                     "speed map accepts the documented 100 metre / 30 second location boundary")
 
         let series = TMobileCoverageChartDrawing.points(observations: many, gaps: [gap], metric: .rsrp)
         let decimated = TMobileCoverageChartDrawing.drawnPoints(series, selectedID: selectedID)

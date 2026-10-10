@@ -71,8 +71,10 @@ struct TMobileCoverageMapView: View {
                     if located.isEmpty && towers.isEmpty && referenceOverlays.isEmpty {
                         VStack(spacing: 6) {
                             Image(systemName: "location.slash").font(.title2)
-                            Text("No saved locations").font(.headline)
-                            Text("Record with Mac Location Services or correct a saved reading’s location.")
+                            Text(metric == .speed ? "No mapped speed tests" : "No saved locations").font(.headline)
+                            Text(metric == .speed
+                                 ? "A speed test appears here when it has fresh, precise recorded positions and a stable location context."
+                                 : "Record with Mac Location Services or correct a saved reading’s location.")
                                 .font(.caption).multilineTextAlignment(.center)
                         }
                         .padding(18).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
@@ -124,17 +126,23 @@ enum TMobileCoverageMapDrawing {
     static func coordinate(for observation: TMobileCoverageObservation, metric: TMobileCoverageMetric) -> TMobileMapCoordinate? {
         if metric == .speed {
             guard let speed = observation.speedTest, speed.isValid, speed.scoreEligible,
-                  let start = speed.startLocation, start.isUsable(at: speed.startedAt),
-                  let end = speed.endLocation, end.isUsable(at: speed.endedAt),
+                  let start = speed.startLocation, speedLocationUsable(start, at: speed.startedAt),
+                  let end = speed.endLocation, speedLocationUsable(end, at: speed.endedAt),
                   start.distance(to: end) <= 100,
                   abs(speed.endedAt.timeIntervalSince(observation.date)) <= 300 else { return nil }
             if let correction = observation.correction,
-               TMobileCoverageSupport.distance(correction.coordinate, end.coordinate) > 150 { return nil }
+               TMobileCoverageSupport.distance(correction.coordinate, start.coordinate) > 150
+                || TMobileCoverageSupport.distance(correction.coordinate, end.coordinate) > 150 { return nil }
             return end.coordinate
         }
         if let correction = observation.correction, correction.isValid { return correction.coordinate }
         guard let fix = observation.location, fix.isUsable(at: observation.date) else { return nil }
         return fix.coordinate
+    }
+
+    private static func speedLocationUsable(_ fix: TMobileCoverageLocationFix, at date: Date) -> Bool {
+        fix.isUsable(at: date) && fix.horizontalAccuracy <= 100
+            && (-5...30).contains(date.timeIntervalSince(fix.timestamp))
     }
 
     static func positionedObservations(_ observations: [TMobileCoverageObservation], metric: TMobileCoverageMetric,
