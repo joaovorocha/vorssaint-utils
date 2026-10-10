@@ -2,11 +2,15 @@
 
 Open **Settings → Monitor → T-Mobile Coverage → Open Coverage…**, or **Coverage, radio & towers…** from the T-Mobile section. Settings search also finds “Coverage” and “Recording.” The window combines live available radio metrics, saved sessions, four linked charts, Apple Maps, local tower references and optional OpenCelliD lookup. Existing gateway and Wi-Fi controls remain available.
 
-The Settings card exposes the existing **Show T-Mobile gateway** switch and gateway configuration. This switch shows live readings in the Network panel. Recording starts with **Start recording** inside Coverage, or at app launch when **Automatically start recording** is enabled. **Open Coverage…** remains available with the switch off so saved sessions can still be viewed. Opening Settings does not start recording or request location access.
+The Settings card exposes the existing **Show T-Mobile gateway** switch and gateway configuration. This switch shows live readings in the Network panel. Recording starts with **Start recording** inside Coverage, or at app launch when **Automatically start recording** is enabled. **Open Coverage…** remains available with the switch off so saved sessions can still be viewed. Opening Settings does not start recording or request location access. Automatic launch recording also respects availability of the Network feature; the separate gateway-display switch does not control recording.
+
+## Menu-bar appearance
+
+In Settings → Monitor → In the menu bar, open the T-Mobile connection options. Select **Technology**, **Signal bars** and **Bands** independently. At least one stays selected; the existing item checkmark hides the whole indicator. Technology follows the current reported LTE/5G connection, with 5G UC inferred from supported reported bands. Screen readers retain the complete connection summary even when a visual component is hidden.
 
 ## Recording
 
-Choose a session name and **Start recording**, or enable **Automatically start recording** in Settings → Monitor → T-Mobile Coverage. This opt-in preference starts a new local session each time the app launches, including launch at login; opening the Coverage window is unnecessary. Manual Stop lasts until the next app launch. The separate General → Launch at login preference controls whether macOS launches the app at login. Location permission is requested only after recording starts or **Use Mac location**. The Mac's Core Location position may come from Wi-Fi; it is not presented as a dedicated GPS receiver. Original source, timestamp and reported accuracy are retained. Latitude/longitude corrections append revisions without replacing the original fix.
+Choose a session name and **Start recording**, or enable **Automatically start recording** in Settings → Monitor → T-Mobile Coverage. This preference defaults off and starts a new local session each time the app launches when enabled, including launch at login; opening the Coverage window is unnecessary. Manual Stop lasts until the next app launch. The separate General → Launch at login preference controls whether macOS launches the app at login. Location permission is requested only after recording starts or **Use Mac location**. The Mac's Core Location position may come from Wi-Fi; it is not presented as a dedicated GPS receiver. Original source, timestamp and reported accuracy are retained. Latitude/longitude corrections append revisions without replacing the original fix.
 
 Each fresh public gateway poll creates an observation. Missing radio fields remain absent. Sleep, display sleep and a closed laptop lid pause recording and cancel speed tests; reopening and display wake resume with fresh context. Quitting closes the session. A crash leaves an explicitly unfinished session; a later launch starts a new session only if automatic recording is enabled. No service keeps the Mac awake.
 
@@ -49,6 +53,7 @@ See [archive format and recovery](TMOBILE-COVERAGE-ARCHIVE.md). Advanced adminis
 - `bash Tests/TMobileCoverageMapChartsTests.sh`
 - `zsh Tests/TMobileOpenCellIDServiceTests.sh`
 - `zsh Tests/TMobileGatewayCredentialTests.sh`
+- `zsh Tests/TMobileGatewayAppearanceTests.sh`
 
 These checks use synthetic readings and intercepted test traffic. Live Mac permission/accuracy, real parked detection, physical sleep/lid transitions, map rendering and gateway/provider responses require a supervised app run.
 
