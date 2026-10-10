@@ -10,6 +10,8 @@ xcrun swiftc -j 1 -disable-batch-mode -Onone -sdk "$task_sdk" -module-cache-path
     Sources/Vorssaint/Support/ScopedCredentialStore.swift \
     Sources/Vorssaint/Services/Metrics/TMobileGatewaySupport.swift \
     Sources/Vorssaint/Services/Metrics/TMobileGatewayCredentials.swift \
+    Sources/Vorssaint/Services/Metrics/TMobileOpenCellIDSupport.swift \
+    Sources/Vorssaint/Services/Metrics/TMobileOpenCellIDCredentials.swift \
     Tests/Fixtures/TMobileGatewayCredentialHarness.swift \
     -o "$task_temp/tests"
 "$task_temp/tests"

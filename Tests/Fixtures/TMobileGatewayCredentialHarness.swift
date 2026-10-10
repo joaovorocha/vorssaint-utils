@@ -12,7 +12,8 @@ enum TMobileGatewayCredentialHarness {
         scopes(suite)
         keychainBoundary(suite)
         formLifecycle(suite)
-        print("Gateway credential fixtures: \(suite.checks) checks, \(suite.failures) failures")
+        apiKeyLifecycle(suite)
+        print("Scoped credential fixtures: \(suite.checks) checks, \(suite.failures) failures")
         exit(suite.failures == 0 ? 0 : 1)
     }
 
@@ -152,6 +153,61 @@ enum TMobileGatewayCredentialHarness {
         let invalidCalls = store.calls
         form.useSavedPassword(); form.forget(); form.password = secret
         suite.check(form.prepareSignIn() == nil && store.calls == invalidCalls, "invalid gateway scope cannot touch even the mocked store")
+    }
+
+    @MainActor private static func apiKeyLifecycle(_ suite: CredentialSuite) {
+        let store = MockCredentialStore()
+        let apiService = "fixture.app.credentials.opencellid-api-key.v1"
+        let apiScope = ScopedCredentialScope(service: apiService, account: "https://opencellid.org")
+        let form = TMobileOpenCellIDCredentialForm(store: store, service: apiService)
+        suite.check(store.calls == 0 && form.token.isEmpty && !form.validToken, "opening the API key form performs no credential or provider access")
+        for invalid in ["", "contains space", "line\nbreak", "nonascii-é", String(repeating: "x", count: 8_193)] {
+            form.token = invalid; form.saveKey()
+            suite.check(!form.validToken && store.calls == 0, "invalid API keys never reach even the mocked store")
+        }
+        let apiKey = "synthetic-api-key-value"
+        form.token = apiKey
+        suite.check(form.validToken && form.token == apiKey && store.calls == 0, "typing and local API key validation preserve the exact key without storage")
+        form.saveKey()
+        suite.check(store.values[apiScope] == apiKey && store.writes == 1 && form.token == apiKey, "explicit Save API key persists only the exact provider scope and preserves typed input")
+        suite.check(form.message?.contains("saved") == true && form.message?.contains("has not validated") == true
+                    && form.message?.contains(apiKey) == false, "save reports local persistence without claiming provider validity or exposing the key")
+        form.token = "different-synthetic-api-key"
+        suite.check(form.message == nil && form.token == "different-synthetic-api-key" && store.writes == 1,
+                    "editing an API key clears stale saved-status text without silently saving the new value")
+        let calls = store.calls
+        form.clearVolatile()
+        suite.check(form.token.isEmpty && form.message == nil && store.calls == calls && store.values[apiScope] == apiKey,
+                    "closing the API key form clears memory only and retains the saved record")
+        form.useSavedKey()
+        suite.check(form.token == apiKey && form.validToken && store.reads == 1, "explicit Use saved key loads exactly the provider record")
+        suite.check(form.message?.contains("manual") == true, "loading a saved API key never implies an automatic lookup")
+        let otherApp = TMobileOpenCellIDCredentialForm(store: store, service: "other.app.credentials.opencellid-api-key.v1")
+        otherApp.useSavedKey()
+        suite.check(otherApp.token.isEmpty && otherApp.message?.contains("No API key") == true, "another app namespace cannot load this provider key")
+        store.values[scope()!] = secret
+        form.forgetKey()
+        suite.check(form.token.isEmpty && store.values[apiScope] == nil && store.values[scope()!] == secret,
+                    "Forget saved key clears memory and deletes only the provider item, preserving gateway credentials")
+        suite.check(form.message?.contains("forgotten") == true, "successful API key deletion reports its exact purpose")
+        form.useSavedKey()
+        suite.check(form.token.isEmpty && form.message?.contains("No API key") == true, "missing provider credentials leave the secure field empty")
+        store.values[apiScope] = "invalid saved key"
+        form.useSavedKey()
+        suite.check(form.token.isEmpty && !form.validToken && form.message?.contains("unavailable") == true, "invalid saved API keys cannot become lookup input")
+        store.error = ScopedCredentialStoreError.unavailable
+        form.token = apiKey; form.saveKey()
+        suite.check(form.token == apiKey && form.message?.contains("could not be saved") == true
+                    && form.message?.contains(apiKey) == false, "Keychain save failures preserve typed API input and report no secret")
+        form.useSavedKey()
+        suite.check(form.token.isEmpty && form.message?.contains("Keychain is unavailable") == true, "failed saved-key loading cannot leave previous input behind")
+        form.token = apiKey; form.forgetKey()
+        suite.check(form.token.isEmpty && form.message?.contains("could not be forgotten") == true, "failed API key deletion clears volatile input without claiming successful removal")
+        let failures = store.calls
+        form.clearVolatile()
+        suite.check(store.calls == failures, "clearing API key memory never retries a denied Keychain operation")
+        form.token = String(repeating: "a", count: 8_192)
+        suite.check(form.validToken, "API key form uses the provider support boundary at the accepted maximum")
     }
 
     private static func exact(_ query: [String: Any], _ scope: ScopedCredentialScope) -> Bool {
