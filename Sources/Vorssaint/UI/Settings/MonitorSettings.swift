@@ -25,6 +25,7 @@ struct MonitorSettings: View {
     @AppStorage(DefaultsKey.monitorMemoryMetric) private var memoryMetric = "used"
     @AppStorage(DefaultsKey.panelShowFanControl) private var showFanControl = true
     @AppStorage(DefaultsKey.monitorNetTMobile) private var showTMobileGateway = false
+    @AppStorage(DefaultsKey.tMobileCoverageStartOnLaunch) private var startCoverageOnLaunch = false
     @State private var configuringTMobile = false
 
     var body: some View {
@@ -102,7 +103,10 @@ struct MonitorSettings: View {
             SettingsFeatureSwitchRow(symbol: "antenna.radiowaves.left.and.right", title: strings.enable,
                                      caption: "Show live gateway readings in the Network panel.",
                                      isOn: $showTMobileGateway, feature: .monitorNetwork)
-            Text("View saved sessions, radio measurements and tower references. Start recording in Coverage to save a new session.")
+            SettingsFeatureSwitchRow(symbol: "record.circle", title: "Automatically start recording when app launches",
+                                     caption: "Starts a new local session in the background. Stop recording pauses it until the next launch.",
+                                     isOn: $startCoverageOnLaunch, feature: .monitorNetwork)
+            Text("View saved sessions, radio measurements and tower references. Start or stop recording in Coverage. Recording continues when its window is closed and pauses when the Mac or display sleeps. To start at login, also enable Launch at login in General.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -443,8 +447,10 @@ private struct MenuBarMetricTile: View {
 
     private var options: AnyView? {
         if metric.tMobileReading != nil {
-            return AnyView(Text("Shows the currently reported LTE or 5G connection, signal bars and its bands together. Open the dropdown for all radio metrics.")
-                .font(.callout).fixedSize(horizontal: false, vertical: true).frame(width: 260))
+            return AnyView(Text("Shows LTE or 5G, signal strength and bands in the menu bar. Open its menu for detailed radio readings.")
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading))
         }
         switch metric {
         case .memory:

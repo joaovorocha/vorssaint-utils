@@ -12,6 +12,8 @@ swiftc -Onone -target "$(uname -m)-apple-macosx14.0" -sdk "$task_sdk" -module-ca
     Sources/Vorssaint/Services/Metrics/TMobileGatewayHistorySupport.swift \
     Sources/Vorssaint/Services/Metrics/TMobileTowerReferenceSupport.swift \
     Sources/Vorssaint/Services/Metrics/TMobileCoverageSupport.swift \
+    Sources/Vorssaint/Services/Metrics/TMobileCoverageRecordingStartup.swift \
     Sources/Vorssaint/Services/Metrics/TMobileCoverageStore.swift \
+    Tests/TMobileCoverageRecordingStartupTests.swift \
     Tests/Fixtures/TMobileCoverageStoreHarness.swift -o "$task_temp/tests"
 "$task_temp/tests"

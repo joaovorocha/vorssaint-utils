@@ -7,6 +7,7 @@ import Foundation
         func expect(_ condition: Bool, _ message: String) {
             checks += 1; if !condition { failures.append(message) }
         }
+        TMobileCoverageRecordingStartupTests.run(expect)
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("coverage-fixture-\(UUID())")
         defer { try? FileManager.default.removeItem(at: folder) }
         let now = Date(timeIntervalSince1970: 1_800_000_000)

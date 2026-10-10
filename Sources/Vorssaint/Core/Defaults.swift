@@ -469,6 +469,7 @@ enum DefaultsKey {
     static let monitorNetTest = "monitorNetTest"
     static let monitorNetTMobile = "monitorNetTMobile"
     static let tMobileGatewayAddress = "tMobileGatewayAddress"
+    static let tMobileCoverageStartOnLaunch = "tMobileCoverageStartOnLaunch"
     static let networkSpeedUnit = "networkSpeedUnit" // bytes | bits, for every live network speed readout
     static let monitorDiskUsage = "monitorDiskUsage"
     static let monitorDiskActivity = "monitorDiskActivity"
@@ -1699,6 +1700,7 @@ enum Defaults {
         DefaultsKey.monitorNetTest: true,
         DefaultsKey.monitorNetTMobile: false,
         DefaultsKey.tMobileGatewayAddress: "http://192.168.12.1",
+        DefaultsKey.tMobileCoverageStartOnLaunch: false,
         DefaultsKey.networkSpeedUnit: NetworkSpeedUnit.bytes.rawValue,
         DefaultsKey.monitorDiskUsage: true,
         DefaultsKey.monitorDiskActivity: true,

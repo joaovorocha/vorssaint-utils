@@ -4,8 +4,9 @@ import Combine
 import Foundation
 import IOKit
 
-/// Explicitly started, local-only coverage recording. No launch-time location
-/// request, automatic session resume, server connection, or background wake.
+/// Local-only coverage recording, started explicitly or by a saved launch
+/// opt-in. Each start creates a new session; no automatic archive resume,
+/// server connection, or background wake.
 @MainActor final class TMobileCoverageRecorder: ObservableObject {
     static let shared = TMobileCoverageRecorder()
     static let automaticTestsKey = "tMobileCoverageAutomaticParkedTests"

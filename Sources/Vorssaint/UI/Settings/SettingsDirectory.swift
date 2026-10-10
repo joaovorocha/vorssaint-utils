@@ -167,7 +167,8 @@ enum SettingsDirectory {
             id: .setting(.tMobileCoverage),
             destination: FeatureSettingsDestination(.monitor, sectionAnchor: .tMobileCoverage),
             title: "T-Mobile Coverage", icon: "antenna.radiowaves.left.and.right",
-            keywords: ["Recording", "Saved sessions", "Heat map", "Signal history", "Tower map", "5G", "LTE"]))
+            keywords: ["Recording", "Automatically start recording", "Record on launch", "Background recording", "Launch at login",
+                       "Saved sessions", "Heat map", "Signal history", "Tower map", "5G", "LTE"]))
         return items
     }
 
