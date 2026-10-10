@@ -282,6 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
     func applicationWillTerminate(_ notification: Notification) {
         isTerminating = true
+        TMobileCoverageRecorder.shared.stop(reason: .appClosed)
         CommandBarService.shared.restoreBorrowedInputSource()
         if AppFeature.notch.isAvailable { NotchService.shared.stop(restoreCapture: false) }
         // Quitting properly means the start worked, whenever it happened.

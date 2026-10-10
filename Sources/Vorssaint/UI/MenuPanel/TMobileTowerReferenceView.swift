@@ -10,7 +10,6 @@ struct TMobileTowerReferenceView: View {
     let eNodeBID: UInt32?
     let ecgi: String?
     @ObservedObject private var store = TMobileGatewayHistoryStore.shared
-    @State private var showingHistory = false
 
     init(radio: TMobileRadioSignal, isFiveG: Bool, eNodeBID: UInt32? = nil, ecgi: String? = nil) {
         self.radio = radio; self.isFiveG = isFiveG
@@ -34,7 +33,7 @@ struct TMobileTowerReferenceView: View {
             HStack {
                 Label("Local tower references", systemImage: "mappin.and.ellipse").font(.headline)
                 Spacer()
-                Button("Manage pins…") { showingHistory = true }
+                Button("Manage pins…") { TMobileCellTelemetryWindow.shared.show() }
             }
             Text("Saved on this Mac. An identifier match links a local reference; the tower location remains unverified.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -61,7 +60,6 @@ struct TMobileTowerReferenceView: View {
             }
         }
         .textSelection(.enabled)
-        .sheet(isPresented: $showingHistory) { TMobileGatewayHistoryView() }
     }
 
     private func identityMatch(_ pin: TMobileTowerPin) -> TMobileTowerIdentityMatch? {

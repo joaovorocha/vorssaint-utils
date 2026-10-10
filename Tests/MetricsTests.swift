@@ -155,6 +155,9 @@ struct MetricsTests {
                 TMobileWiFiTests.run(suite)
                 TMobileCellTelemetryTests.run(suite)
                 TMobileOpenCellIDTests.run(suite)
+                TMobileCoverageParkedTests.run(suite)
+                TMobileCoverageReferenceTests.run(suite)
+                TMobileCoverageMapChartsTests.run(suite)
             }),
             ("fork-identity", { FanControlIdentityTests.run(suite) }),
             ("fork-sharing", { ForkSharingTests.run(suite) }),

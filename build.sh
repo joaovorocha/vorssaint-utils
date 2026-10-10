@@ -566,6 +566,12 @@ if (( TEST )); then
         Sources/Vorssaint/Services/Metrics/TMobileGatewayHistorySupport.swift
         Sources/Vorssaint/Services/Metrics/TMobileTowerReferenceSupport.swift
         Sources/Vorssaint/Services/Metrics/TMobileGatewayHistoryStore.swift
+        Sources/Vorssaint/Services/Metrics/TMobileCoverageSupport.swift
+        Sources/Vorssaint/Services/Metrics/TMobileCoverageStore.swift
+        Sources/Vorssaint/Services/Metrics/TMobileCoverageParkedSupport.swift
+        Sources/Vorssaint/Services/Metrics/TMobileCoverageReferenceSupport.swift
+        Sources/Vorssaint/UI/MenuPanel/TMobileCoverageMapView.swift
+        Sources/Vorssaint/UI/MenuPanel/TMobileCoverageChartsView.swift
         Sources/Vorssaint/Services/Metrics/TMobileGatewayService.swift
         Sources/Vorssaint/Services/Metrics/TMobileWiFiSupport.swift
         Sources/Vorssaint/Services/Metrics/TMobileWiFiService.swift
@@ -621,6 +627,7 @@ if (( TEST )); then
         zsh ./Tests/TMobileWiFiServiceTests.sh || test_status=1
         zsh ./Tests/TMobileCellTelemetryServiceTests.sh || test_status=1
         zsh ./Tests/TMobileOpenCellIDServiceTests.sh || test_status=1
+        zsh ./Tests/TMobileCoverageStoreTests.sh || test_status=1
     fi
     discard_test_preferences || test_status=1
     exit $test_status

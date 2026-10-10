@@ -5,6 +5,7 @@ import SwiftUI
 
 /// Explicit online lookup, separate from local references and gateway sessions.
 struct TMobileOpenCellIDView: View {
+    var onSaveResult: ((TMobileOpenCellIDResult) -> Void)? = nil
     @StateObject private var service = TMobileOpenCellIDService()
     @State private var radio = TMobileOpenCellIDRadio.nr
     @State private var mcc = ""
@@ -59,7 +60,7 @@ struct TMobileOpenCellIDView: View {
                     Link("OpenCellID API guide", destination: TMobileOpenCellIDSupport.documentation)
                     Link("Get an OpenCellID key", destination: TMobileOpenCellIDSupport.provider)
                 }.font(.caption)
-                Text("No measurements, gateway credentials, Wi-Fi settings or saved tower files are uploaded. Lookups and keys are cleared when this view closes. Results are not saved to local pins or history.")
+                Text("No measurements, gateway credentials, Wi-Fi settings or saved tower files are uploaded. Lookups and keys are cleared when this view closes. Save an estimate explicitly to retain it on this Mac’s reference map.")
                     .font(.caption).foregroundStyle(.secondary)
             }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -87,6 +88,10 @@ struct TMobileOpenCellIDView: View {
                 Link("CC BY-SA 4.0", destination: TMobileOpenCellIDSupport.license)
             }.font(.caption)
             Text("Display change: coordinates rounded to up to 4 decimal places.").font(.caption).foregroundStyle(.secondary)
+            if let onSaveResult {
+                Button("Save estimate to reference map") { onSaveResult(result) }
+                    .buttonStyle(.bordered)
+            }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
