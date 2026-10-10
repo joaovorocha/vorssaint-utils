@@ -249,18 +249,24 @@ enum TMobileCoverageSupport {
     static func connectionScore(for observation: TMobileCoverageObservation) -> Double? {
         guard observation.isValid, let rsrp = observation.rsrp, let sinr = observation.sinr,
               let speed = observation.speedTest, speed.scoreEligible,
-              let origin = observation.location, origin.isUsable(at: observation.date),
-              let start = speed.startLocation, start.isUsable(at: speed.startedAt),
-              let end = speed.endLocation, end.isUsable(at: speed.endedAt),
+              let origin = observation.location, scoreUsable(origin, at: observation.date),
+              let start = speed.startLocation, scoreUsable(start, at: speed.startedAt),
+              let end = speed.endLocation, scoreUsable(end, at: speed.endedAt),
               abs(speed.startedAt.timeIntervalSince(observation.date)) <= 300,
               abs(speed.endedAt.timeIntervalSince(observation.date)) <= 300,
               start.distance(to: end) <= 100, origin.distance(to: start) <= 150,
               origin.distance(to: end) <= 150 else { return nil }
         // A correction relocates the observation, never an unrelated speed test.
         if let correction = observation.correction,
-           distance(correction.coordinate, start.coordinate) > 150 { return nil }
+           distance(correction.coordinate, start.coordinate) > 150
+            || distance(correction.coordinate, end.coordinate) > 150 { return nil }
         return (normalized(rsrp, from: -120, to: -80)
                 + normalized(sinr, from: -5, to: 25)
                 + normalized(speed.downloadMbps, from: 0, to: 150)) / 3
+    }
+
+    private static func scoreUsable(_ fix: TMobileCoverageLocationFix, at date: Date) -> Bool {
+        fix.isUsable(at: date) && fix.horizontalAccuracy <= 100
+            && (-5...30).contains(date.timeIntervalSince(fix.timestamp))
     }
 }
