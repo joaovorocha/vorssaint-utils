@@ -6,7 +6,13 @@ The Settings card exposes the existing **Show T-Mobile gateway** switch and gate
 
 ## Menu-bar appearance
 
-In Settings → Monitor → In the menu bar, open the T-Mobile connection options. Select **Technology**, **Signal bars** and **Bands** independently. At least one stays selected; the existing item checkmark hides the whole indicator. Technology follows the current reported LTE/5G connection, with 5G UC inferred from supported reported bands. Screen readers retain the complete connection summary even when a visual component is hidden.
+In Settings → Monitor → In the menu bar, open the T-Mobile connection options. Select **Technology**, **Signal bars** and **Bands** independently. At least one stays selected; the existing item checkmark hides the whole indicator. Technology follows the current reported LTE/5G connection, with 5G UC inferred from the active radio’s reported bands. Screen readers retain the complete connection summary even when a visual component is hidden.
+
+## Band explanations
+
+The **ⓘ** beside **Bands** and **Supported bands (capability)** opens a guide for the bands in that row. This is available in public/administrator radio details and the sample inspector’s available radio details. The guide gives the band’s familiar frequency, general uses, and coverage/capacity tradeoffs. Supported bands describe gateway capability; they do not establish a current connection or local carrier deployment. Recorded band rows describe their saved reading. Unknown bands retain their identifier without a guessed frequency or performance rating.
+
+The scrollable native popover supports a Done/Escape dismissal and exposes its information button separately to assistive technology. Frequency facts use [3GPP NR band tables](https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/17.13.00_60/ts_138104v171300p.pdf) and [LTE band tables](https://www.etsi.org/deliver/etsi_ts/136100_136199/136104/17.10.00_60/ts_136104v171000p.pdf). General range/penetration guidance follows [T-Mobile’s spectrum explanation](https://www.t-mobile.com/5g); shared CBRS usage follows the [FCC’s CBRS order](https://docs.fcc.gov/public/attachments/FCC-15-47A1_Rcd.pdf). These are general tendencies, not guaranteed speeds or distances. The guide does not change the connection.
 
 ## Recording
 

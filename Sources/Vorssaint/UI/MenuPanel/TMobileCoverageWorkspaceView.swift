@@ -301,10 +301,16 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
                     ForEach(TMobileGatewayRadioPresentation.sections(sample.snapshot)) { section in
                         Text(section.title).font(.headline)
                         ForEach(section.rows) { row in
-                            LabeledContent(row.label, value: row.value)
-                                .foregroundStyle(row.quality.presentationColor(for: colorScheme))
-                                .accessibilityElement(children: .ignore)
-                                .accessibilityLabel(row.accessibilityValue)
+                            if row.id == .bands || row.id == .supportedBands {
+                                TMobileBandDetailRow(row: row,
+                                                    bands: row.id == .bands ? section.radio.bands : section.radio.supportedBands ?? [],
+                                                    isFiveG: section.id == "fiveG")
+                            } else {
+                                LabeledContent(row.label, value: row.value)
+                                    .foregroundStyle(row.quality.presentationColor(for: colorScheme))
+                                    .accessibilityElement(children: .ignore)
+                                    .accessibilityLabel(row.accessibilityValue)
+                            }
                         }
                     }
                 }.font(.caption)
@@ -316,8 +322,13 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
                     ForEach(TMobileGatewayRadioPresentation.sections(snapshot)) { section in
                         Text(section.title).font(.headline)
                         ForEach(section.rows.filter { [.rsrp, .sinr, .bands].contains($0.id) }) { row in
-                            LabeledContent(row.label, value: row.value)
-                                .foregroundStyle(row.quality.presentationColor(for: colorScheme))
+                            if row.id == .bands {
+                                TMobileBandDetailRow(row: row, bands: section.radio.bands,
+                                                    isFiveG: section.id == "fiveG")
+                            } else {
+                                LabeledContent(row.label, value: row.value)
+                                    .foregroundStyle(row.quality.presentationColor(for: colorScheme))
+                            }
                         }
                     }.font(.callout)
                 }

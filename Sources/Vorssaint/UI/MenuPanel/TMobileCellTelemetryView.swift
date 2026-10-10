@@ -157,15 +157,21 @@ struct TMobileCellTelemetryView: View {
         GroupBox(isFiveG ? "5G radio details" : "LTE / 4G radio details") {
             VStack(alignment: .leading, spacing: 9) {
                 ForEach(TMobileGatewayRadioPresentation.rows(report.signal, isFiveG: isFiveG)) { row in
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(row.label).foregroundStyle(.secondary)
-                        Spacer(minLength: 16)
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(row.value).monospacedDigit()
-                            if let quality = row.qualityLabel { Text(quality).font(.caption) }
-                        }.foregroundStyle(row.quality.presentationColor(for: colorScheme))
+                    if row.id == .bands || row.id == .supportedBands {
+                        TMobileBandDetailRow(row: row,
+                                            bands: row.id == .bands ? report.signal.bands : report.signal.supportedBands ?? [],
+                                            isFiveG: isFiveG)
+                    } else {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(row.label).foregroundStyle(.secondary)
+                            Spacer(minLength: 16)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(row.value).monospacedDigit()
+                                if let quality = row.qualityLabel { Text(quality).font(.caption) }
+                            }.foregroundStyle(row.quality.presentationColor(for: colorScheme))
+                        }
+                        .accessibilityElement(children: .ignore).accessibilityLabel(row.accessibilityValue)
                     }
-                    .accessibilityElement(children: .ignore).accessibilityLabel(row.accessibilityValue)
                 }
                 TMobileTowerReferenceView(radio: report.signal, isFiveG: isFiveG,
                                          eNodeBID: report.signal.eNodeBID, ecgi: report.ecgi)
