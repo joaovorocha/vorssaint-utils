@@ -43,3 +43,17 @@ See [archive format and recovery](TMOBILE-COVERAGE-ARCHIVE.md). Advanced adminis
 - `bash Tests/TMobileCoverageMapChartsTests.sh`
 
 These checks use synthetic readings and intercepted test traffic. Live Mac permission/accuracy, real parked detection, physical sleep/lid transitions, map rendering and gateway/provider responses require a supervised app run.
+
+### Accessibility crash regression (beta.7)
+
+Beta.6 could overflow the main-thread stack when an accessibility reader queried the inspector after starting a recording. LLDB captured repeated `AccessibilityNode.accessibilityLabel` / `NSAccessibilityGetObjectValueForAttribute` calls; the native object was `SwiftUI.AppKitTextInteractionView`, with value `RSRP`. A custom label on a selectable row inherited onto its native text child and recursively resolved `AXDescription`.
+
+Both custom-labeled inspector row containers now use `.accessibilityElement(children: .ignore)` before their complete label/value/quality summary. The inspector retains text selection. Keep the summary on the row element rather than applying it to inherited selectable children.
+
+Runtime regression procedure (an app build and calculation tests alone do not cover this):
+
+1. Open Coverage with a saved session and read its accessibility tree.
+2. Start a named verification session; repeatedly read the tree while fresh gateway samples update RSRP and SINR.
+3. Expand **Available radio details** and confirm complete metric summaries. Check text copying and keyboard access to controls.
+4. Stop recording, close/reopen Coverage several times, switch saved sessions, and repeat accessibility reads.
+5. Relaunch the app and confirm recording stays off and the saved sessions remain available.

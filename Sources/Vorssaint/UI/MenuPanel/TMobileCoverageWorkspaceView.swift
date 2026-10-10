@@ -215,6 +215,10 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
                         if let row = TMobileGatewayRadioPresentation.measurementRow(radio, metric: metric) {
                             HStack { Text(row.label); Spacer(); Text(row.value).monospacedDigit() }
                                 .foregroundStyle(row.quality.presentationColor(for: colorScheme))
+                                // Keep the row's summary on its own AX element. A
+                                // label inherited by selectable native text can
+                                // recursively resolve itself after an update.
+                                .accessibilityElement(children: .ignore)
                                 .accessibilityLabel(row.accessibilityValue)
                         }
                     }
@@ -249,6 +253,7 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
                         ForEach(section.rows) { row in
                             LabeledContent(row.label, value: row.value)
                                 .foregroundStyle(row.quality.presentationColor(for: colorScheme))
+                                .accessibilityElement(children: .ignore)
                                 .accessibilityLabel(row.accessibilityValue)
                         }
                     }
