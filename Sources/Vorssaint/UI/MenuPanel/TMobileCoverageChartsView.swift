@@ -10,6 +10,12 @@ struct TMobileCoverageChartsView: View {
     @Binding var selectedObservationID: UUID?
 
     private var sorted: [TMobileCoverageObservation] { observations.sorted { $0.date < $1.date } }
+    private var pickerSamples: [TMobileCoverageObservation] {
+        var samples = Array(observations.suffix(500).reversed())
+        if let selected = observations.first(where: { $0.id == selectedObservationID }),
+           !samples.contains(where: { $0.id == selected.id }) { samples.insert(selected, at: 0) }
+        return samples
+    }
     private var timeDomain: ClosedRange<Date> {
         let dates = observations.flatMap { [$0.date, $0.speedTest?.endedAt].compactMap { $0 } }
         let first = dates.min() ?? Date()
@@ -29,7 +35,8 @@ struct TMobileCoverageChartsView: View {
                                        description: Text("Start a recording session to compare signal strength, signal quality, tested speed, and Connection Score."))
                     .frame(minHeight: 170)
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], alignment: .leading, spacing: 16) {
+                sampleSelection
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16, alignment: .top)], alignment: .leading, spacing: 16) {
                     ForEach(TMobileCoverageMetric.allCases) { metric in
                         TMobileCoverageMetricChart(observations: sorted, gaps: gaps, metric: metric,
                                                    timeDomain: timeDomain, selectedObservationID: $selectedObservationID)
@@ -37,8 +44,26 @@ struct TMobileCoverageChartsView: View {
                 }
                 Text("Radio lines stop at missing readings or recorded gaps. Speed and score are individual recorded values; a missing speed test never becomes zero. Gray bands mark saved gaps, including location interruptions.")
                     .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var sampleSelection: some View {
+        HStack(spacing: 10) {
+            Text("Selected sample").fixedSize()
+            Picker("Selected sample", selection: $selectedObservationID) {
+                ForEach(pickerSamples) { sample in
+                    Text(sample.date.formatted(date: .abbreviated, time: .standard)).tag(Optional(sample.id))
+                }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 340)
+            Button("Latest") { selectedObservationID = observations.last?.id }.fixedSize()
+            Spacer(minLength: 0)
+        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 

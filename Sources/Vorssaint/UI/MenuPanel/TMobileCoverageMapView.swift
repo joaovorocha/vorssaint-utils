@@ -34,6 +34,7 @@ struct TMobileCoverageMapView: View {
     let metric: TMobileCoverageMetric
     let displayMode: TMobileCoverageMapMode
     @Binding var selectedObservationID: UUID?
+    var onRegionChanged: ((MKCoordinateRegion) -> Void)? = nil
     @State private var fitRequest = 0
 
     private var located: [TMobileCoverageObservation] {
@@ -50,22 +51,15 @@ struct TMobileCoverageMapView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label("Apple Maps", systemImage: "map")
-                    .font(.caption.weight(.semibold))
-                Spacer()
-                Text(displayMode == .samples
-                     ? "\(drawingCount) of \(located.count) located readings drawn"
-                     : "\(drawingCount) of \(allBins.count) measured bins drawn")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button("Fit all") { fitRequest += 1 }
-                    .help("Fit recorded locations and saved tower references")
-            }
+            mapHeader
             TMobileCoverageNativeMap(observations: observations, towers: towers,
                                      referenceOverlays: referenceOverlays, metric: metric,
                                      displayMode: displayMode, fitRequest: fitRequest,
-                                     selectedObservationID: $selectedObservationID)
-                .frame(minHeight: 300)
+                                     selectedObservationID: $selectedObservationID,
+                                     onRegionChanged: onRegionChanged)
+                // Bound only the canvas. The header and explanations must
+                // contribute their full height to the surrounding ScrollView.
+                .frame(height: 320)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay {
                     if located.isEmpty && towers.isEmpty && referenceOverlays.isEmpty {
@@ -76,6 +70,7 @@ struct TMobileCoverageMapView: View {
                                  ? "A speed test appears here when it has fresh, precise recorded positions and a stable location context."
                                  : "Record with Mac Location Services or correct a saved reading’s location.")
                                 .font(.caption).multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding(18).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
                         .padding(24).allowsHitTesting(false)
@@ -86,24 +81,71 @@ struct TMobileCoverageMapView: View {
                 legend("Fair", color: .yellow, symbol: "minus.circle.fill")
                 legend("Poor", color: .red, symbol: "exclamationmark.circle.fill")
                 if displayMode == .samples { legend("No value", color: .secondary, symbol: "circle") }
-            }.font(.caption)
+            }.font(.caption).fixedSize(horizontal: false, vertical: true)
             Text(displayMode == .heat
                  ? "Each colored bin contains actual readings and shows their median in an approximately 50 m grid. Unvisited bins have no measured coverage; this layer does not interpolate."
                  : "Points show saved locations. Gray points have no value for this metric. Select a point or use the readings list.")
                 .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Colors are app guidance for the selected metric, not carrier ratings or predicted coverage.")
                 .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Stale or imprecise reported positions are omitted. Manual corrections remain explicit. Speed uses the test’s recorded location and appears only when its location context is valid.")
                 .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             if selectedObservationID != nil {
                 Text("Dashed ring: recorded position accuracy, not a cellular coverage radius. Dashed connector: manual correction, not a traveled route.")
                     .font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if !towers.isEmpty || !referenceOverlays.isEmpty {
                 Text("Tower pins are source references with unverified locations. Purple boundaries are imported modeled coverage, separate from your measurements.")
                     .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var mapHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                mapTitle
+                Spacer(minLength: 0)
+                drawingSummary
+                fitButton
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    mapTitle
+                    Spacer(minLength: 0)
+                    fitButton
+                }
+                drawingSummary
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var mapTitle: some View {
+        Label("Apple Maps", systemImage: "map")
+            .font(.caption.weight(.semibold))
+            .fixedSize()
+    }
+
+    private var drawingSummary: some View {
+        Text(displayMode == .samples
+             ? "\(drawingCount) of \(located.count) located readings drawn"
+             : "\(drawingCount) of \(allBins.count) measured bins drawn")
+            .font(.caption).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var fitButton: some View {
+        Button("Fit all") { fitRequest += 1 }
+            .help("Fit recorded locations and saved tower references")
+            .fixedSize()
     }
 
     private func legend(_ title: String, color: Color, symbol: String) -> some View {
@@ -251,6 +293,7 @@ private struct TMobileCoverageNativeMap: NSViewRepresentable {
     let displayMode: TMobileCoverageMapMode
     let fitRequest: Int
     @Binding var selectedObservationID: UUID?
+    let onRegionChanged: ((MKCoordinateRegion) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
     func makeNSView(context: Context) -> MKMapView {
@@ -280,6 +323,9 @@ private struct TMobileCoverageNativeMap: NSViewRepresentable {
         private var didFitData = false
         private var updating = false
         private var accuracyCircles = Set<ObjectIdentifier>()
+        private var pendingRegion: MKCoordinateRegion?
+        private var lastDeliveredRegion: MKCoordinateRegion?
+        private var regionDeliveryScheduled = false
 
         init(parent: TMobileCoverageNativeMap) { self.parent = parent }
 
@@ -328,6 +374,38 @@ private struct TMobileCoverageNativeMap: NSViewRepresentable {
                     updating = true; map.selectAnnotation(annotation, animated: false); updating = false
                 }
             }
+            publishRegion(map.region)
+        }
+
+        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            publishRegion(mapView.region)
+        }
+
+        private func publishRegion(_ region: MKCoordinateRegion) {
+            guard parent.onRegionChanged != nil else { return }
+            pendingRegion = region
+            guard !regionDeliveryScheduled else { return }
+            regionDeliveryScheduled = true
+            // A delegate can fire during updateNSView. Coalesce camera events
+            // and deliver outside that update, without changing the camera.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.regionDeliveryScheduled = false
+                guard let latest = self.pendingRegion else { return }
+                self.pendingRegion = nil
+                if let previous = self.lastDeliveredRegion,
+                   Self.sameRegion(previous, latest) { return }
+                self.lastDeliveredRegion = latest
+                self.parent.onRegionChanged?(latest)
+            }
+        }
+
+        private static func sameRegion(_ lhs: MKCoordinateRegion, _ rhs: MKCoordinateRegion) -> Bool {
+            let tolerance = 0.0000001
+            return abs(lhs.center.latitude - rhs.center.latitude) < tolerance
+                && abs(lhs.center.longitude - rhs.center.longitude) < tolerance
+                && abs(lhs.span.latitudeDelta - rhs.span.latitudeDelta) < tolerance
+                && abs(lhs.span.longitudeDelta - rhs.span.longitudeDelta) < tolerance
         }
 
         private func addReferenceLayers(to map: MKMapView) {

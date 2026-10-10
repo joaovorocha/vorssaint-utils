@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
+import MapKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -27,6 +28,8 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
     @State private var fccDate = ""
     @State private var showFCC = true
     @State private var showTowers = true
+    @State private var lookupRegion: MKCoordinateRegion?
+    @State private var lookupCells: [TMobileTowerPin] = []
     @State private var localMessage: String?
 
     private var observations: [TMobileCoverageObservation] {
@@ -41,17 +44,28 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
         Binding(get: { selected?.id }, set: { selectedID = $0 })
     }
     private var selectedSession: TMobileCoverageSession? { store.sessions.first { $0.id == store.selectedSessionID } }
-    private var pickerSamples: [TMobileCoverageObservation] {
-        var samples = Array(observations.suffix(500).reversed())
-        if let selected, !samples.contains(where: { $0.id == selected.id }) { samples.insert(selected, at: 0) }
-        return samples
-    }
     private var testRunning: Bool {
         switch recorder.speedPhase { case .latency, .download, .upload: return true; default: return false }
     }
     private var overlays: [TMobileCoverageMapReferenceOverlay] {
         guard showFCC, let layer = references.layer else { return [] }
         return [.init(id: layer.id, title: layer.title, provenance: "Imported FCC carrier-reported model · source declared by owner", polygons: layer.polygons)]
+    }
+    private struct MapReferenceKey: Hashable {
+        let latitude: Double
+        let longitude: Double
+        let radio: String?
+        let cellID: String?
+
+        init(_ pin: TMobileTowerPin) {
+            latitude = pin.latitude; longitude = pin.longitude
+            radio = pin.radio?.rawValue; cellID = pin.cellID
+        }
+    }
+    private var mapTowers: [TMobileTowerPin] {
+        guard showTowers else { return [] }
+        var seen = Set<MapReferenceKey>()
+        return (pins.towers + lookupCells).filter { seen.insert(MapReferenceKey($0)).inserted }
     }
 
     var body: some View {
@@ -63,16 +77,6 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
                     status
                     mapAndInspector
                     if !observations.isEmpty {
-                        HStack {
-                            Text("Measurements over time").font(.headline)
-                            Spacer()
-                            Picker("Selected sample", selection: selection) {
-                                ForEach(pickerSamples) { sample in
-                                    Text(sample.date.formatted(date: .abbreviated, time: .standard)).tag(Optional(sample.id))
-                                }
-                            }.frame(maxWidth: 300)
-                            Button("Latest") { selectedID = observations.last?.id }
-                        }
                         TMobileCoverageChartsView(observations: observations, gaps: store.gaps, selectedObservationID: selection)
                     }
                     DisclosureGroup("All radio metrics & administrator readings") {
@@ -80,7 +84,8 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
                     }
                     DisclosureGroup("Tower pins & reference coverage") { referenceControls.padding(.top, 8) }
                     DisclosureGroup("OpenCelliD lookup") {
-                        TMobileOpenCellIDView(onSaveResult: saveOpenCellID).padding(.top, 8)
+                        TMobileOpenCellIDView(region: lookupRegion, onAreaResults: showOpenCellIDResults,
+                                             onSaveResult: saveOpenCellID).padding(.top, 8)
                     }
                     DisclosureGroup("Saved sessions & analysis") { archiveControls.padding(.top, 8) }
                     if let message = localMessage { Text(message).font(.callout).foregroundStyle(.secondary) }
@@ -173,26 +178,70 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
     private var mapAndInspector: some View {
         HStack(alignment: .top, spacing: 18) {
             VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Picker("Display", selection: $mode) {
-                        Text("Samples").tag(TMobileCoverageMapMode.samples)
-                        Text("Heat view").tag(TMobileCoverageMapMode.heat)
-                    }.pickerStyle(.segmented).frame(width: 190)
-                    Spacer()
-                    Toggle("Tower pins", isOn: $showTowers)
-                    if references.layer != nil { Toggle("FCC reference", isOn: $showFCC) }
-                }.font(.caption)
-                TMobileCoverageMapView(observations: observations, towers: showTowers ? pins.towers : [], referenceOverlays: overlays,
-                                      metric: metric, displayMode: mode, selectedObservationID: selection)
+                mapControls
+                TMobileCoverageMapView(observations: observations, towers: mapTowers, referenceOverlays: overlays,
+                                      metric: metric, displayMode: mode, selectedObservationID: selection,
+                                      onRegionChanged: { lookupRegion = $0 })
                     .id(store.selectedSessionID)
-                    .frame(minHeight: 360, idealHeight: 400)
+                if !lookupCells.isEmpty { lookupAttribution }
                 if observations.isEmpty {
                     Text("Start recording to save real readings. Grant Location Services when asked, or correct saved measurements manually.")
                         .font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            }.frame(maxWidth: .infinity)
+            }.frame(maxWidth: .infinity, alignment: .leading)
             inspector.frame(width: 260)
         }
+    }
+
+    private var lookupAttribution: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("\(lookupCells.count) community cell estimates · temporary map references, not confirmed towers")
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Link("OpenCellID", destination: TMobileOpenCellIDSupport.provider)
+                Link("CC BY-SA 4.0", destination: TMobileOpenCellIDSupport.license)
+            }
+        }
+        .font(.caption).foregroundStyle(.secondary)
+    }
+
+    private var mapControls: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) {
+                displayControl
+                Spacer(minLength: 0)
+                referenceToggles
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                displayControl
+                referenceToggles
+            }
+        }
+        .font(.caption)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var displayControl: some View {
+        HStack(spacing: 8) {
+            Text("Display").fixedSize()
+            Picker("Display", selection: $mode) {
+                Text("Samples").tag(TMobileCoverageMapMode.samples)
+                Text("Heat view").tag(TMobileCoverageMapMode.heat)
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(width: 190)
+        }
+        .fixedSize()
+    }
+
+    private var referenceToggles: some View {
+        HStack(spacing: 12) {
+            Toggle("Tower pins", isOn: $showTowers)
+            if references.layer != nil { Toggle("FCC reference", isOn: $showFCC) }
+        }
+        .fixedSize()
     }
 
     private var inspector: some View {
@@ -333,6 +382,16 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
             Text("Sessions stay until you delete them. Export contains locations and radio identifiers. The versioned export is ready for a future Shadow API; there is no uploader or configured server connection.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+    }
+
+    private func showOpenCellIDResults(_ results: [TMobileOpenCellIDResult]) {
+        var seen = Set<MapReferenceKey>()
+        lookupCells = results.map { result in
+            TMobileTowerPin(name: "OpenCellID \(result.identity.radio.rawValue) cell estimate", latitude: result.latitude,
+                           longitude: result.longitude, bands: "", cellID: String(result.identity.cellID),
+                           radio: result.identity.radio == .nr ? .nr : .lte,
+                           provenance: "OpenCellID CC BY-SA 4.0 · community cell estimate · not a confirmed tower")
+        }.filter { $0.isValid && seen.insert(MapReferenceKey($0)).inserted }
     }
 
     private func saveOpenCellID(_ result: TMobileOpenCellIDResult) {
