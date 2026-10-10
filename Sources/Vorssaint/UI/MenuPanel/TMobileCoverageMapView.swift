@@ -17,11 +17,15 @@ struct TMobileCoverageMapReferenceOverlay: Identifiable, Equatable {
     let provenance: String
     let publishedAt: Date?
     let polygons: [[[TMobileMapCoordinate]]]
+    /// Optional source minsignal values, aligned with complete polygon components.
+    /// A missing value is a modeled footprint, not a measured signal value.
+    let modeledSignalDBm: [Double?]?
 
     init(id: UUID = UUID(), title: String, provenance: String, publishedAt: Date? = nil,
-         polygons: [[[TMobileMapCoordinate]]]) {
+         polygons: [[[TMobileMapCoordinate]]], modeledSignalDBm: [Double?]? = nil) {
         self.id = id; self.title = title; self.provenance = provenance
         self.publishedAt = publishedAt; self.polygons = polygons
+        self.modeledSignalDBm = modeledSignalDBm
     }
 }
 
@@ -34,6 +38,13 @@ struct TMobileCoverageMapView: View {
     let metric: TMobileCoverageMetric
     let displayMode: TMobileCoverageMapMode
     @Binding var selectedObservationID: UUID?
+    var selectedTowerID: UUID? = nil
+    var onTowerSelected: ((UUID) -> Void)? = nil
+    var showsMeasurements: Bool = true
+    var canvasHeight: CGFloat = 320
+    var showsExplanations: Bool = true
+    var showsHeader: Bool = true
+    var initialRegion: MKCoordinateRegion? = nil
     var onRegionChanged: ((MKCoordinateRegion) -> Void)? = nil
     @State private var fitRequest = 0
 
@@ -51,22 +62,26 @@ struct TMobileCoverageMapView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            mapHeader
+            if showsHeader { mapHeader }
             TMobileCoverageNativeMap(observations: observations, towers: towers,
                                      referenceOverlays: referenceOverlays, metric: metric,
                                      displayMode: displayMode, fitRequest: fitRequest,
                                      selectedObservationID: $selectedObservationID,
+                                     selectedTowerID: selectedTowerID, onTowerSelected: onTowerSelected,
+                                     showsMeasurements: showsMeasurements,
+                                     initialRegion: initialRegion,
                                      onRegionChanged: onRegionChanged)
                 // Bound only the canvas. The header and explanations must
                 // contribute their full height to the surrounding ScrollView.
-                .frame(height: 320)
+                .frame(height: canvasHeight.isFinite && canvasHeight > 0 ? canvasHeight : 320)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay {
-                    if located.isEmpty && towers.isEmpty && referenceOverlays.isEmpty {
+                    if (!showsMeasurements || located.isEmpty) && towers.isEmpty && referenceOverlays.isEmpty {
                         VStack(spacing: 6) {
                             Image(systemName: "location.slash").font(.title2)
-                            Text(metric == .speed ? "No mapped speed tests" : "No saved locations").font(.headline)
-                            Text(metric == .speed
+                            Text(!showsMeasurements ? "No reference layers" : metric == .speed ? "No mapped speed tests" : "No saved locations").font(.headline)
+                            Text(!showsMeasurements ? "Show measured readings, add tower references, or import FCC modeled coverage."
+                                 : metric == .speed
                                  ? "A speed test appears here when it has fresh, precise recorded positions and a stable location context."
                                  : "Record with Mac Location Services or correct a saved reading’s location.")
                                 .font(.caption).multilineTextAlignment(.center)
@@ -76,32 +91,36 @@ struct TMobileCoverageMapView: View {
                         .padding(24).allowsHitTesting(false)
                     }
                 }
-            HStack(spacing: 12) {
-                legend("Good", color: .green, symbol: "checkmark.circle.fill")
-                legend("Fair", color: .yellow, symbol: "minus.circle.fill")
-                legend("Poor", color: .red, symbol: "exclamationmark.circle.fill")
-                if displayMode == .samples { legend("No value", color: .secondary, symbol: "circle") }
-            }.font(.caption).fixedSize(horizontal: false, vertical: true)
-            Text(displayMode == .heat
-                 ? "Each colored bin contains actual readings and shows their median in an approximately 50 m grid. Unvisited bins have no measured coverage; this layer does not interpolate."
-                 : "Points show saved locations. Gray points have no value for this metric. Select a point or use the readings list.")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("Colors are app guidance for the selected metric, not carrier ratings or predicted coverage.")
-                .font(.caption2).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("Stale or imprecise reported positions are omitted. Manual corrections remain explicit. Speed uses the test’s recorded location and appears only when its location context is valid.")
-                .font(.caption2).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if selectedObservationID != nil {
-                Text("Dashed ring: recorded position accuracy, not a cellular coverage radius. Dashed connector: manual correction, not a traveled route.")
-                    .font(.caption2).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if !towers.isEmpty || !referenceOverlays.isEmpty {
-                Text("Tower pins are source references with unverified locations. Purple boundaries are imported modeled coverage, separate from your measurements.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            if showsExplanations {
+                if showsMeasurements {
+                    HStack(spacing: 12) {
+                        legend("Good", color: .green, symbol: "checkmark.circle.fill")
+                        legend("Fair", color: .orange, symbol: "minus.circle.fill")
+                        legend("Poor", color: .red, symbol: "exclamationmark.circle.fill")
+                        if displayMode == .samples { legend("No value", color: .secondary, symbol: "circle") }
+                    }.font(.caption).fixedSize(horizontal: false, vertical: true)
+                    Text(displayMode == .heat
+                         ? "Each colored bin contains actual readings and shows their median in an approximately 50 m grid. Unvisited bins have no measured coverage; this layer does not interpolate."
+                         : "Points show saved locations. Gray points have no value for this metric. Select a point or use the readings list.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Colors are app guidance for the selected metric, not carrier ratings or predicted coverage.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Stale or imprecise reported positions are omitted. Manual corrections remain explicit. Speed uses the test’s recorded location and appears only when its location context is valid.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if selectedObservationID != nil {
+                        Text("Dashed ring: recorded position accuracy, not a cellular coverage radius. Dashed connector: manual correction, not a traveled route.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if !towers.isEmpty || !referenceOverlays.isEmpty {
+                    Text("Antenna pins are source references with unverified locations. Blue filled areas are imported FCC modeled coverage, separate from measured readings.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -135,7 +154,8 @@ struct TMobileCoverageMapView: View {
     }
 
     private var drawingSummary: some View {
-        Text(displayMode == .samples
+        Text(!showsMeasurements ? "Reference layers"
+             : displayMode == .samples
              ? "\(drawingCount) of \(located.count) located readings drawn"
              : "\(drawingCount) of \(allBins.count) measured bins drawn")
             .font(.caption).foregroundStyle(.secondary)
@@ -144,7 +164,7 @@ struct TMobileCoverageMapView: View {
 
     private var fitButton: some View {
         Button("Fit all") { fitRequest += 1 }
-            .help("Fit recorded locations and saved tower references")
+            .help("Fit visible readings, tower references, and modeled coverage")
             .fixedSize()
     }
 
@@ -157,6 +177,105 @@ enum TMobileCoverageMapDrawing {
     static let maximumSamples = 2_000
     static let maximumBins = 2_000
     static let gridMetres = 50.0
+
+    static func validInitialRegion(_ region: MKCoordinateRegion?) -> Bool {
+        guard let region else { return false }
+        return region.center.latitude.isFinite && (-90...90).contains(region.center.latitude)
+            && region.center.longitude.isFinite && (-180...180).contains(region.center.longitude)
+            && region.span.latitudeDelta.isFinite && region.span.latitudeDelta > 0 && region.span.latitudeDelta <= 180
+            && region.span.longitudeDelta.isFinite && region.span.longitudeDelta > 0 && region.span.longitudeDelta <= 360
+    }
+
+    static func fitRect(positions: [TMobileMapCoordinate], measuredRects: [MKMapRect], referenceRects: [MKMapRect],
+                        includesAllLayers: Bool) -> MKMapRect {
+        var rect = MKMapRect.null
+        for coordinate in positions where coordinate.isValid {
+            let point = MKMapPoint(CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude))
+            rect = rect.union(MKMapRect(x: point.x, y: point.y, width: 1, height: 1))
+        }
+        for measured in measuredRects { rect = rect.union(measured) }
+        // Complete FCC components can extend well beyond the imported area.
+        // Start near actual positions, then let an explicit Fit all include them.
+        if includesAllLayers || rect.isNull {
+            for reference in referenceRects { rect = rect.union(reference) }
+        }
+        return rect
+    }
+
+    enum SelectionTarget: Equatable {
+        case reading(UUID), tower(UUID)
+    }
+
+    /// Unchanged controlled IDs must not steal a native selection or move the camera
+    /// when a new reading arrives. Explicit changes choose the corresponding pin.
+    static func selectionTarget(previousReading: UUID?, previousTower: UUID?, reading: UUID?, tower: UUID?,
+                                current: SelectionTarget?) -> SelectionTarget? {
+        if tower != previousTower, let tower { return .tower(tower) }
+        if reading != previousReading, let reading { return .reading(reading) }
+        if case .tower(let id) = current, tower != previousTower, tower != id { return nil }
+        if case .reading(let id) = current, reading != previousReading, reading != id { return nil }
+        return current
+    }
+
+    struct TowerPresentation {
+        let title: String
+        let subtitle: String
+        let detail: String
+
+        init(pin: TMobileTowerPin) {
+            let technology = pin.radio == .nr ? "5G NR" : pin.radio == .lte ? "LTE" : "Radio unspecified"
+            title = "\(technology) · \(pin.name)"
+            subtitle = "Reference · Location unverified"
+            let coordinates = String(format: "%.5f, %.5f", locale: Locale(identifier: "en_US_POSIX"),
+                                     pin.latitude, pin.longitude)
+            detail = "\(pin.provenance ?? "Local reference; source unspecified")\nReported coordinates: \(coordinates)"
+        }
+    }
+
+    static func referenceColor(modeledSignalDBm value: Double?) -> NSColor {
+        guard let value, value.isFinite, (-120 ... -50).contains(value) else {
+            return NSColor.systemBlue.withAlphaComponent(0.24)
+        }
+        let strength = (value + 120) / 70
+        // Source model values use only blue. Measured quality uses green/amber/red.
+        return NSColor(srgbRed: 0.30 - 0.26 * strength, green: 0.65 - 0.38 * strength,
+                       blue: 1.0 - 0.15 * strength, alpha: 0.26)
+    }
+
+    final class ReferenceGeometryCache {
+        private var layers: [TMobileCoverageMapReferenceOverlay] = []
+        private(set) var polygons: [MKPolygon] = []
+        private var signalByPolygon: [ObjectIdentifier: Double] = [:]
+
+        func signal(for polygon: MKPolygon) -> Double? { signalByPolygon[ObjectIdentifier(polygon)] }
+
+        /// Reference geometry is independent of metric, readings, and selection.
+        /// Keeping the same MKPolygon objects avoids rebuilding all their vertices.
+        @discardableResult func update(_ newLayers: [TMobileCoverageMapReferenceOverlay]) -> Bool {
+            guard layers != newLayers else { return false }
+            layers = newLayers
+            polygons.removeAll(keepingCapacity: true)
+            signalByPolygon.removeAll(keepingCapacity: true)
+            for layer in newLayers {
+                let signals = layer.modeledSignalDBm?.count == layer.polygons.count ? layer.modeledSignalDBm : nil
+                for (index, rings) in layer.polygons.enumerated() {
+                    guard let outer = rings.first, outer.count >= 4, outer.allSatisfy(\.isValid) else { continue }
+                    let holes = rings.dropFirst().filter { $0.count >= 4 && $0.allSatisfy(\.isValid) }.map { ring in
+                        var coordinates = ring.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                        return MKPolygon(coordinates: &coordinates, count: coordinates.count)
+                    }
+                    var coordinates = outer.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                    let polygon = MKPolygon(coordinates: &coordinates, count: coordinates.count, interiorPolygons: holes)
+                    polygon.title = layer.title; polygon.subtitle = layer.provenance
+                    polygons.append(polygon)
+                    if let value = signals?[index], value.isFinite, (-120 ... -50).contains(value) {
+                        signalByPolygon[ObjectIdentifier(polygon)] = value
+                    }
+                }
+            }
+            return true
+        }
+    }
 
     struct Bin {
         let mapRect: MKMapRect
@@ -273,7 +392,7 @@ enum TMobileCoverageMapDrawing {
     static func color(value: Double?, metric: TMobileCoverageMetric) -> NSColor {
         switch quality(value: value, metric: metric) {
         case .good, .excellent: return .systemGreen
-        case .fair: return .systemYellow
+        case .fair: return .systemOrange
         case .poor: return .systemRed
         case .unknown: return .secondaryLabelColor
         }
@@ -293,6 +412,10 @@ private struct TMobileCoverageNativeMap: NSViewRepresentable {
     let displayMode: TMobileCoverageMapMode
     let fitRequest: Int
     @Binding var selectedObservationID: UUID?
+    let selectedTowerID: UUID?
+    let onTowerSelected: ((UUID) -> Void)?
+    let showsMeasurements: Bool
+    let initialRegion: MKCoordinateRegion?
     let onRegionChanged: ((MKCoordinateRegion) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -304,7 +427,10 @@ private struct TMobileCoverageNativeMap: NSViewRepresentable {
         map.showsScale = true
         map.showsUserLocation = false
         map.pointOfInterestFilter = .excludingAll
-        map.setAccessibilityLabel("Recorded coverage map. Use the readings list to select a reading with the keyboard.")
+        if TMobileCoverageMapDrawing.validInitialRegion(initialRegion), let initialRegion {
+            map.setRegion(initialRegion, animated: false)
+        }
+        map.setAccessibilityLabel("Coverage map with measured readings, tower references, and modeled coverage. Use the readings and tower lists to select a location with the keyboard.")
         return map
     }
     func updateNSView(_ map: MKMapView, context: Context) {
@@ -315,66 +441,144 @@ private struct TMobileCoverageNativeMap: NSViewRepresentable {
         var parent: TMobileCoverageNativeMap
         private var previousObservations: [TMobileCoverageObservation] = []
         private var previousTowers: [TMobileTowerPin] = []
-        private var previousReferences: [TMobileCoverageMapReferenceOverlay] = []
+        private let referenceCache = TMobileCoverageMapDrawing.ReferenceGeometryCache()
         private var previousMetric: TMobileCoverageMetric?
         private var previousMode: TMobileCoverageMapMode?
         private var previousSelection: UUID?
+        private var previousTowerSelection: UUID?
+        private var previousShowsMeasurements: Bool?
+        private var previousSelectedObservation: TMobileCoverageObservation?
+        private var activeSelection: TMobileCoverageMapDrawing.SelectionTarget?
+        private var measurementAnnotations: [MKAnnotation] = []
+        private var measurementOverlays: [MKOverlay] = []
+        private var towerAnnotations: [TowerAnnotation] = []
+        private var selectionAnnotations: [MKAnnotation] = []
+        private var selectionOverlays: [MKOverlay] = []
         private var lastFitRequest = -1
         private var didFitData = false
+        private var hasUpdated = false
         private var updating = false
-        private var accuracyCircles = Set<ObjectIdentifier>()
         private var pendingRegion: MKCoordinateRegion?
         private var lastDeliveredRegion: MKCoordinateRegion?
         private var regionDeliveryScheduled = false
 
-        init(parent: TMobileCoverageNativeMap) { self.parent = parent }
+        init(parent: TMobileCoverageNativeMap) {
+            self.parent = parent
+            if TMobileCoverageMapDrawing.validInitialRegion(parent.initialRegion) {
+                didFitData = true
+                lastFitRequest = parent.fitRequest
+            }
+        }
 
         func update(parent: TMobileCoverageNativeMap, map: MKMapView) {
             self.parent = parent
-            let selectionChanged = previousSelection != parent.selectedObservationID
-            let changed = previousObservations != parent.observations || previousTowers != parent.towers
-                || previousReferences != parent.referenceOverlays || previousMetric != parent.metric
-                || previousMode != parent.displayMode || previousSelection != parent.selectedObservationID
-            if changed {
-                updating = true
-                map.removeAnnotations(map.annotations)
-                map.removeOverlays(map.overlays)
-                accuracyCircles.removeAll()
-                addReferenceLayers(to: map)
-                let located = TMobileCoverageMapDrawing.positionedObservations(parent.observations, metric: parent.metric,
-                                                                               selectedID: parent.selectedObservationID)
-                if parent.displayMode == .samples {
-                    map.addAnnotations(TMobileCoverageMapDrawing.selectedSamples(located, selectedID: parent.selectedObservationID)
-                        .map { ReadingAnnotation(observation: $0, metric: parent.metric) })
-                } else {
-                    let bins = TMobileCoverageMapDrawing.bins(observations: located, metric: parent.metric)
-                    for bin in TMobileCoverageMapDrawing.drawnBins(bins, selectedID: parent.selectedObservationID) {
-                        map.addOverlay(MeasuredBinOverlay(bin: bin, metric: parent.metric), level: .aboveRoads)
-                        map.addAnnotation(BinAnnotation(bin: bin, metric: parent.metric))
+            let restoringRegion = !hasUpdated && TMobileCoverageMapDrawing.validInitialRegion(parent.initialRegion)
+            hasUpdated = true
+            let nextSelection = TMobileCoverageMapDrawing.selectionTarget(
+                previousReading: previousSelection, previousTower: previousTowerSelection,
+                reading: parent.selectedObservationID, tower: parent.selectedTowerID, current: activeSelection)
+            let targetChanged = nextSelection != activeSelection
+            activeSelection = nextSelection
+            let readingSelectionChanged = previousSelection != parent.selectedObservationID
+            let controlledSelectionChanged = readingSelectionChanged || previousTowerSelection != parent.selectedTowerID
+            let metricOrModeChanged = previousMetric != parent.metric || previousMode != parent.displayMode
+                || previousShowsMeasurements != parent.showsMeasurements
+            updating = true
+            let oldReferences = referenceCache.polygons
+            if referenceCache.update(parent.referenceOverlays) {
+                map.removeOverlays(oldReferences)
+                map.addOverlays(referenceCache.polygons, level: .aboveRoads)
+            }
+            if previousObservations != parent.observations || metricOrModeChanged || readingSelectionChanged {
+                var annotations: [MKAnnotation] = []
+                map.removeOverlays(measurementOverlays)
+                measurementOverlays.removeAll(keepingCapacity: true)
+                if parent.showsMeasurements {
+                    let located = TMobileCoverageMapDrawing.positionedObservations(parent.observations, metric: parent.metric,
+                                                                                   selectedID: parent.selectedObservationID)
+                    if parent.displayMode == .samples {
+                        let reusable = Dictionary(measurementAnnotations.compactMap { $0 as? ReadingAnnotation }
+                            .map { ($0.observationID, $0) }, uniquingKeysWith: { first, _ in first })
+                        annotations = TMobileCoverageMapDrawing.selectedSamples(located, selectedID: parent.selectedObservationID).map {
+                            if let existing = reusable[$0.id], existing.observation == $0, existing.metric == parent.metric { return existing }
+                            return ReadingAnnotation(observation: $0, metric: parent.metric)
+                        }
+                    } else {
+                        let bins = TMobileCoverageMapDrawing.bins(observations: located, metric: parent.metric)
+                        for bin in TMobileCoverageMapDrawing.drawnBins(bins, selectedID: parent.selectedObservationID) {
+                            measurementOverlays.append(MeasuredBinOverlay(bin: bin, metric: parent.metric))
+                            annotations.append(BinAnnotation(bin: bin, metric: parent.metric))
+                        }
                     }
                 }
-                map.addAnnotations(parent.towers.filter(\.isValid).map(TowerAnnotation.init))
-                addSelectedLocation(to: map)
-                previousObservations = parent.observations; previousTowers = parent.towers
-                previousReferences = parent.referenceOverlays; previousMetric = parent.metric
-                previousMode = parent.displayMode; previousSelection = parent.selectedObservationID
-                updating = false
+                replaceAnnotations(measurementAnnotations, with: annotations, on: map)
+                measurementAnnotations = annotations
+                // Keep measured cells above every modeled polygon, including after a reference refresh.
+                map.addOverlays(measurementOverlays, level: .aboveLabels)
             }
+            if previousTowers != parent.towers {
+                let reusable = Dictionary(towerAnnotations.map { ($0.towerID, $0) }, uniquingKeysWith: { first, _ in first })
+                let annotations = parent.towers.filter(\.isValid).map { pin in
+                    if let existing = reusable[pin.id], existing.pin == pin { return existing }
+                    return TowerAnnotation(pin: pin)
+                }
+                replaceAnnotations(towerAnnotations, with: annotations, on: map)
+                towerAnnotations = annotations
+            }
+            let selectedObservation = parent.showsMeasurements
+                ? parent.observations.first(where: { $0.id == parent.selectedObservationID }) : nil
+            if previousSelectedObservation != selectedObservation || metricOrModeChanged || readingSelectionChanged {
+                map.removeAnnotations(selectionAnnotations); selectionAnnotations.removeAll()
+                map.removeOverlays(selectionOverlays); selectionOverlays.removeAll()
+                addSelectedLocation(to: map)
+            }
+            previousObservations = parent.observations; previousTowers = parent.towers
+            previousMetric = parent.metric; previousMode = parent.displayMode
+            previousSelection = parent.selectedObservationID; previousTowerSelection = parent.selectedTowerID
+            previousShowsMeasurements = parent.showsMeasurements; previousSelectedObservation = selectedObservation
+            if targetChanged || controlledSelectionChanged || metricOrModeChanged { refreshMarkerSelection(on: map) }
+            updating = false
             let hasData = !map.annotations.isEmpty || !map.overlays.isEmpty
             if parent.fitRequest != lastFitRequest || (!didFitData && hasData) {
+                let includesAllLayers = didFitData && parent.fitRequest != lastFitRequest
                 lastFitRequest = parent.fitRequest
-                if hasData { fitAll(map); didFitData = true }
+                if hasData { fit(map, includesAllLayers: includesAllLayers); didFitData = true }
             }
-            if let selectedID = parent.selectedObservationID,
-               let annotation = map.annotations.first(where: { ($0 as? ReadingAnnotation)?.observationID == selectedID }) {
-                if selectionChanged, !map.visibleMapRect.contains(MKMapPoint(annotation.coordinate)) {
-                    map.setCenter(annotation.coordinate, animated: false)
+            // Selecting an annotation may pan its callout into view. Only explicit
+            // controlled selection changes can do this, never periodic data updates.
+            if (targetChanged || controlledSelectionChanged) && !restoringRegion {
+                let annotation: MKAnnotation? = map.annotations.first { annotation in
+                    switch activeSelection {
+                    case .reading(let id): return (annotation as? ReadingAnnotation)?.observationID == id
+                    case .tower(let id): return (annotation as? TowerAnnotation)?.towerID == id
+                    case nil: return false
+                    }
                 }
-                if !map.selectedAnnotations.contains(where: { $0 === annotation }) {
-                    updating = true; map.selectAnnotation(annotation, animated: false); updating = false
+                updating = true
+                for selected in map.selectedAnnotations where selected !== annotation { map.deselectAnnotation(selected, animated: false) }
+                if let annotation {
+                    if !map.visibleMapRect.contains(MKMapPoint(annotation.coordinate)) {
+                        map.setCenter(annotation.coordinate, animated: false)
+                    }
+                    if !map.selectedAnnotations.contains(where: { $0 === annotation }) { map.selectAnnotation(annotation, animated: false) }
                 }
+                updating = false
             }
             publishRegion(map.region)
+        }
+
+        private func replaceAnnotations(_ old: [MKAnnotation], with new: [MKAnnotation], on map: MKMapView) {
+            let oldIDs = Set(old.map { ObjectIdentifier($0 as AnyObject) })
+            let newIDs = Set(new.map { ObjectIdentifier($0 as AnyObject) })
+            map.removeAnnotations(old.filter { !newIDs.contains(ObjectIdentifier($0 as AnyObject)) })
+            map.addAnnotations(new.filter { !oldIDs.contains(ObjectIdentifier($0 as AnyObject)) })
+        }
+
+        private func refreshMarkerSelection(on map: MKMapView) {
+            for annotation in map.annotations {
+                guard let view = map.view(for: annotation) as? MKMarkerAnnotationView else { continue }
+                configureMarker(view, annotation: annotation)
+            }
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
@@ -408,55 +612,37 @@ private struct TMobileCoverageNativeMap: NSViewRepresentable {
                 && abs(lhs.span.longitudeDelta - rhs.span.longitudeDelta) < tolerance
         }
 
-        private func addReferenceLayers(to map: MKMapView) {
-            for layer in parent.referenceOverlays {
-                for rings in layer.polygons {
-                    guard let outer = rings.first, outer.count >= 4, outer.allSatisfy(\.isValid) else { continue }
-                    let holes = rings.dropFirst().filter { $0.count >= 4 && $0.allSatisfy(\.isValid) }.map { ring in
-                        var coordinates = ring.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
-                        return MKPolygon(coordinates: &coordinates, count: coordinates.count)
-                    }
-                    var coordinates = outer.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
-                    let polygon = MKPolygon(coordinates: &coordinates, count: coordinates.count, interiorPolygons: holes)
-                    polygon.title = layer.title
-                    polygon.subtitle = layer.provenance
-                    map.addOverlay(polygon, level: .aboveRoads)
-                }
-            }
-        }
-
         private func addSelectedLocation(to map: MKMapView) {
-            guard let observation = parent.observations.first(where: { $0.id == parent.selectedObservationID }),
+            guard parent.showsMeasurements,
+                  let observation = parent.observations.first(where: { $0.id == parent.selectedObservationID }),
                   let coordinate = TMobileCoverageMapDrawing.coordinate(for: observation, metric: parent.metric), coordinate.isValid else { return }
             if parent.displayMode == .heat {
-                map.addAnnotation(ReadingAnnotation(observation: observation, metric: parent.metric))
+                selectionAnnotations.append(ReadingAnnotation(observation: observation, metric: parent.metric))
             }
             let accuracyFix = parent.metric == .speed ? observation.speedTest?.endLocation : observation.location
             if let fix = accuracyFix, fix.coordinate.isValid,
                fix.horizontalAccuracy.isFinite, fix.horizontalAccuracy > 0 {
                 let circle = MKCircle(center: CLLocationCoordinate2D(latitude: fix.coordinate.latitude, longitude: fix.coordinate.longitude),
                                       radius: fix.horizontalAccuracy)
-                accuracyCircles.insert(ObjectIdentifier(circle)); map.addOverlay(circle, level: .aboveLabels)
+                selectionOverlays.append(circle)
             }
             if parent.metric != .speed, observation.correction != nil, let original = observation.location?.coordinate, original.isValid,
                original != coordinate {
                 var points = [CLLocationCoordinate2D(latitude: original.latitude, longitude: original.longitude),
                               CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude)]
                 let line = MKPolyline(coordinates: &points, count: 2)
-                map.addOverlay(line, level: .aboveLabels)
-                map.addAnnotation(OriginalLocationAnnotation(coordinate: points[0]))
+                selectionOverlays.append(line)
+                selectionAnnotations.append(OriginalLocationAnnotation(coordinate: points[0]))
             }
+            map.addAnnotations(selectionAnnotations)
+            map.addOverlays(selectionOverlays, level: .aboveLabels)
         }
 
-        private func fitAll(_ map: MKMapView) {
-            var rect = MKMapRect.null
-            for annotation in map.annotations {
-                let point = MKMapPoint(annotation.coordinate)
-                rect = rect.union(MKMapRect(x: point.x, y: point.y, width: 1, height: 1))
-            }
-            for overlay in map.overlays where !accuracyCircles.contains(ObjectIdentifier(overlay as AnyObject)) {
-                rect = rect.union(overlay.boundingMapRect)
-            }
+        private func fit(_ map: MKMapView, includesAllLayers: Bool) {
+            var rect = TMobileCoverageMapDrawing.fitRect(
+                positions: map.annotations.map { .init(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) },
+                measuredRects: measurementOverlays.map(\.boundingMapRect),
+                referenceRects: referenceCache.polygons.map(\.boundingMapRect), includesAllLayers: includesAllLayers)
             guard !rect.isNull else { return }
             let padding = max(200 * MKMapPointsPerMeterAtLatitude(map.centerCoordinate.latitude), max(rect.width, rect.height) * 0.08)
             rect = rect.insetBy(dx: -padding, dy: -padding)
@@ -479,27 +665,53 @@ private struct TMobileCoverageNativeMap: NSViewRepresentable {
             let view = mapView.dequeueReusableAnnotationView(withIdentifier: "coverage-marker") as? MKMarkerAnnotationView
                 ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: "coverage-marker")
             view.annotation = annotation; view.canShowCallout = true; view.clusteringIdentifier = nil
+            configureMarker(view, annotation: annotation)
+            return view
+        }
+
+        private func configureMarker(_ view: MKMarkerAnnotationView, annotation: MKAnnotation) {
             view.displayPriority = .defaultLow
+            view.titleVisibility = .adaptive; view.subtitleVisibility = .hidden
+            view.detailCalloutAccessoryView = nil
+            view.glyphText = nil
             if let reading = annotation as? ReadingAnnotation {
                 view.markerTintColor = TMobileCoverageMapDrawing.color(value: reading.value, metric: parent.metric)
                 view.glyphImage = NSImage(systemSymbolName: reading.corrected ? "pencil" : "waveform.path", accessibilityDescription: nil)
-                view.displayPriority = reading.observationID == parent.selectedObservationID ? .required : .defaultLow
-            } else if annotation is TowerAnnotation {
-                view.markerTintColor = .systemBlue
+                view.displayPriority = activeSelection == .reading(reading.observationID) ? .required : .defaultLow
+            } else if let tower = annotation as? TowerAnnotation {
+                let selected = activeSelection == .tower(tower.towerID)
+                view.markerTintColor = selected ? .systemPurple : .systemIndigo
                 view.glyphImage = NSImage(systemSymbolName: "antenna.radiowaves.left.and.right", accessibilityDescription: nil)
+                view.titleVisibility = .visible
+                view.displayPriority = selected ? .required : .defaultHigh
+                let detail = NSTextField(wrappingLabelWithString: tower.detail)
+                detail.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+                detail.textColor = .secondaryLabelColor
+                detail.preferredMaxLayoutWidth = 240
+                view.detailCalloutAccessoryView = detail
             } else {
                 view.markerTintColor = .secondaryLabelColor
                 view.glyphImage = NSImage(systemSymbolName: "location", accessibilityDescription: nil)
             }
-            view.setAccessibilityLabel("\((annotation.title ?? nil) ?? "Location"). \((annotation.subtitle ?? nil) ?? "")")
-            return view
+            let detail = (annotation as? TowerAnnotation).map { ". \($0.detail)" } ?? ""
+            view.setAccessibilityLabel("\((annotation.title ?? nil) ?? "Location"). \((annotation.subtitle ?? nil) ?? "")\(detail)")
         }
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             guard !updating else { return }
+            if let tower = view.annotation as? TowerAnnotation {
+                activeSelection = .tower(tower.towerID)
+                refreshMarkerSelection(on: mapView)
+                DispatchQueue.main.async { [weak self] in self?.parent.onTowerSelected?(tower.towerID) }
+                return
+            }
             let id = (view.annotation as? ReadingAnnotation)?.observationID ?? (view.annotation as? BinAnnotation)?.representativeID
-            if let id, id != parent.selectedObservationID {
-                DispatchQueue.main.async { self.parent.selectedObservationID = id }
+            if let id {
+                activeSelection = .reading(id)
+                refreshMarkerSelection(on: mapView)
+                if id != parent.selectedObservationID {
+                    DispatchQueue.main.async { [weak self] in self?.parent.selectedObservationID = id }
+                }
             }
         }
 
@@ -507,8 +719,9 @@ private struct TMobileCoverageNativeMap: NSViewRepresentable {
             if let bin = overlay as? MeasuredBinOverlay { return MeasuredBinRenderer(overlay: bin) }
             if let polygon = overlay as? MKPolygon {
                 let renderer = MKPolygonRenderer(polygon: polygon)
-                renderer.fillColor = NSColor.systemPurple.withAlphaComponent(0.10)
-                renderer.strokeColor = NSColor.systemPurple.withAlphaComponent(0.75)
+                let color = TMobileCoverageMapDrawing.referenceColor(modeledSignalDBm: referenceCache.signal(for: polygon))
+                renderer.fillColor = color
+                renderer.strokeColor = color.withAlphaComponent(0.85)
                 renderer.lineWidth = 1.5
                 return renderer
             }
@@ -529,6 +742,8 @@ private struct TMobileCoverageNativeMap: NSViewRepresentable {
 }
 
 private final class ReadingAnnotation: NSObject, MKAnnotation {
+    let observation: TMobileCoverageObservation
+    let metric: TMobileCoverageMetric
     let observationID: UUID
     let coordinate: CLLocationCoordinate2D
     let title: String?
@@ -536,6 +751,7 @@ private final class ReadingAnnotation: NSObject, MKAnnotation {
     let value: Double?
     let corrected: Bool
     init(observation: TMobileCoverageObservation, metric: TMobileCoverageMetric) {
+        self.observation = observation; self.metric = metric
         observationID = observation.id
         let position = TMobileCoverageMapDrawing.coordinate(for: observation, metric: metric)!
         coordinate = CLLocationCoordinate2D(latitude: position.latitude, longitude: position.longitude)
@@ -549,13 +765,17 @@ private final class ReadingAnnotation: NSObject, MKAnnotation {
 }
 
 private final class TowerAnnotation: NSObject, MKAnnotation {
+    let pin: TMobileTowerPin
+    var towerID: UUID { pin.id }
     let coordinate: CLLocationCoordinate2D
     let title: String?
     let subtitle: String?
+    let detail: String
     init(pin: TMobileTowerPin) {
+        self.pin = pin
         coordinate = CLLocationCoordinate2D(latitude: pin.latitude, longitude: pin.longitude)
-        title = pin.name
-        subtitle = "Location unverified · \(pin.provenance ?? "Local reference; source unspecified")"
+        let presentation = TMobileCoverageMapDrawing.TowerPresentation(pin: pin)
+        title = presentation.title; subtitle = presentation.subtitle; detail = presentation.detail
     }
 }
 
@@ -595,7 +815,7 @@ private final class MeasuredBinRenderer: MKOverlayRenderer {
     override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
         guard let bin = overlay as? MeasuredBinOverlay else { return }
         let rectangle = rect(for: bin.boundingMapRect)
-        context.setFillColor(bin.color.withAlphaComponent(0.44).cgColor)
+        context.setFillColor(bin.color.withAlphaComponent(0.60).cgColor)
         context.fill(rectangle)
         context.setStrokeColor(bin.color.withAlphaComponent(0.85).cgColor)
         context.setLineWidth(1 / zoomScale)

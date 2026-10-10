@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import MapKit
+import SwiftUI
 
 enum TMobileCoverageMapChartsTests {
     static func run(_ suite: TestSuite) {
@@ -148,5 +149,150 @@ enum TMobileCoverageMapChartsTests {
         suite.expect(TMobileCoverageMapDrawing.quality(value: nil, metric: .score) == .unknown
                      && TMobileCoverageMapDrawing.quality(value: .nan, metric: .speed) == .unknown,
                      "unavailable values remain neutral")
+
+        // SwiftUI value construction does not create a native map or fetch a basemap.
+        let oldCaller = TMobileCoverageMapView(observations: [], towers: [], metric: .rsrp,
+                                               displayMode: .heat, selectedObservationID: .constant(nil),
+                                               onRegionChanged: { _ in })
+        suite.expect(oldCaller.showsMeasurements && oldCaller.showsHeader && oldCaller.showsExplanations
+                     && oldCaller.canvasHeight == 320 && oldCaller.selectedTowerID == nil,
+                     "existing map callers retain default visible layers and layout")
+        let towerID = UUID()
+        let compact = TMobileCoverageMapView(observations: [], towers: [], metric: .rsrp,
+                                             displayMode: .heat, selectedObservationID: .constant(nil),
+                                             selectedTowerID: towerID, onTowerSelected: { _ in }, showsMeasurements: false,
+                                             canvasHeight: 460, showsExplanations: false, showsHeader: false)
+        suite.expect(!compact.showsMeasurements && !compact.showsHeader && !compact.showsExplanations
+                     && compact.canvasHeight == 460 && compact.selectedTowerID == towerID && compact.onTowerSelected != nil,
+                     "explorer can control tower selection and compact map chrome independently")
+
+        typealias Target = TMobileCoverageMapDrawing.SelectionTarget
+        func target(_ priorReading: UUID?, _ priorTower: UUID?, _ reading: UUID?, _ tower: UUID?,
+                    _ current: Target?) -> Target? {
+            TMobileCoverageMapDrawing.selectionTarget(previousReading: priorReading, previousTower: priorTower,
+                                                       reading: reading, tower: tower, current: current)
+        }
+        suite.expect(target(nil, nil, first.id, towerID, nil) == .tower(towerID),
+                     "explicit tower selection has priority when both controlled IDs change")
+        let otherTowerID = UUID()
+        suite.expect(target(first.id, towerID, first.id, otherTowerID, .tower(towerID)) == .tower(otherTowerID),
+                     "choosing another tower produces explicit selection navigation to that tower")
+        suite.expect(target(first.id, towerID, first.id, towerID, .tower(towerID)) == .tower(towerID),
+                     "periodic observations preserve the active tower without requesting camera selection")
+        suite.expect(target(first.id, towerID, first.id, towerID, .reading(second.id)) == .reading(second.id),
+                     "unchanged controlled IDs preserve a newly clicked native reading")
+        suite.expect(target(first.id, towerID, second.id, towerID, .tower(towerID)) == .reading(second.id),
+                     "explicit reading selection can replace a tower callout")
+        suite.expect(target(first.id, towerID, first.id, nil, .tower(towerID)) == nil,
+                     "forgetting controlled tower selection clears its active pin")
+        suite.expect(target(first.id, towerID, first.id, nil, .reading(first.id)) == .reading(first.id),
+                     "clearing an inactive tower does not clear the active reading")
+        suite.expect(target(first.id, nil, nil, nil, .reading(first.id)) == nil,
+                     "clearing a controlled reading clears its active pin")
+
+        let tower = TMobileTowerPin(id: towerID, name: "Synthetic community estimate", latitude: 40, longitude: -100,
+                                    bands: "n41", cellID: nil, radio: .nr, provenance: "Synthetic OpenCellID reference")
+        let towerText = TMobileCoverageMapDrawing.TowerPresentation(pin: tower)
+        suite.expect(towerText.title == "5G NR · Synthetic community estimate" && !towerText.title.contains("UC"),
+                     "tower technology label reports NR without inferring Ultra Capacity")
+        suite.expect(towerText.subtitle.contains("Reference") && towerText.subtitle.contains("unverified")
+                     && towerText.detail.contains("Synthetic OpenCellID reference")
+                     && towerText.detail.contains("40.00000, -100.00000"),
+                     "tower callout distinguishes its source and reported coordinates from measurements")
+        let unspecified = TMobileTowerPin(name: "Synthetic unknown radio", latitude: 40, longitude: -100, bands: "n41", cellID: nil)
+        suite.expect(TMobileCoverageMapDrawing.TowerPresentation(pin: unspecified).title.hasPrefix("Radio unspecified")
+                     && TMobileCoverageMapDrawing.TowerPresentation(pin: unspecified).detail.contains("source unspecified"),
+                     "tower labels do not infer radio technology or provenance from bands")
+        let lte = TMobileTowerPin(name: "Synthetic LTE reference", latitude: 40, longitude: -100, bands: "B2", cellID: nil, radio: .lte)
+        suite.expect(TMobileCoverageMapDrawing.TowerPresentation(pin: lte).title.hasPrefix("LTE ·"),
+                     "LTE reference pins have an explicit technology label")
+        let restoredRegion = MKCoordinateRegion(center: .init(latitude: 40, longitude: -100),
+                                                span: .init(latitudeDelta: 0.2, longitudeDelta: 0.3))
+        suite.expect(TMobileCoverageMapDrawing.validInitialRegion(restoredRegion), "a retained map area can be restored on recreation")
+        suite.expect(!TMobileCoverageMapDrawing.validInitialRegion(nil)
+                     && !TMobileCoverageMapDrawing.validInitialRegion(.init(center: .init(latitude: .nan, longitude: -100), span: restoredRegion.span))
+                     && !TMobileCoverageMapDrawing.validInitialRegion(.init(center: restoredRegion.center, span: .init(latitudeDelta: 0, longitudeDelta: 0.3)))
+                     && !TMobileCoverageMapDrawing.validInitialRegion(.init(center: restoredRegion.center, span: .init(latitudeDelta: 0.2, longitudeDelta: 361))),
+                     "invalid retained regions cannot become native camera coordinates")
+
+        let outer: [TMobileMapCoordinate] = [.init(latitude: 39, longitude: -101), .init(latitude: 39, longitude: -99),
+                                            .init(latitude: 41, longitude: -99), .init(latitude: 41, longitude: -101),
+                                            .init(latitude: 39, longitude: -101)]
+        let hole: [TMobileMapCoordinate] = [.init(latitude: 39.5, longitude: -100.5), .init(latitude: 39.5, longitude: -99.5),
+                                           .init(latitude: 40.5, longitude: -99.5), .init(latitude: 40.5, longitude: -100.5),
+                                           .init(latitude: 39.5, longitude: -100.5)]
+        let layer = TMobileCoverageMapReferenceOverlay(title: "Synthetic FCC model", provenance: "Synthetic local import",
+                                                       polygons: [[outer, hole], [outer]], modeledSignalDBm: [-110, -70])
+        let cache = TMobileCoverageMapDrawing.ReferenceGeometryCache()
+        suite.expect(cache.update([layer]) && cache.polygons.count == 2, "modeled components each retain their own polygon")
+        let originalPolygon = cache.polygons[0]
+        suite.expect(originalPolygon.pointCount == outer.count && originalPolygon.interiorPolygons?.count == 1
+                     && originalPolygon.interiorPolygons?.first?.pointCount == hole.count,
+                     "FCC modeled polygon keeps its complete outer ring and interior hole")
+        var retained = [CLLocationCoordinate2D](repeating: .init(), count: outer.count)
+        originalPolygon.getCoordinates(&retained, range: NSRange(location: 0, length: retained.count))
+        suite.expect(zip(retained, outer).allSatisfy { abs($0.latitude - $1.latitude) < 0.0000001
+            && abs($0.longitude - $1.longitude) < 0.0000001 },
+                     "FCC geometry keeps every original vertex without interpolation or clipping")
+        var retainedHole = [CLLocationCoordinate2D](repeating: .init(), count: hole.count)
+        originalPolygon.interiorPolygons?.first?.getCoordinates(&retainedHole, range: NSRange(location: 0, length: retainedHole.count))
+        suite.expect(zip(retainedHole, hole).allSatisfy { abs($0.latitude - $1.latitude) < 0.0000001
+            && abs($0.longitude - $1.longitude) < 0.0000001 }, "FCC geometry keeps every interior hole vertex")
+        suite.expect(cache.signal(for: originalPolygon) == -110 && cache.signal(for: cache.polygons[1]) == -70,
+                     "modeled minsignal values remain aligned with their source polygon components")
+        suite.expect(!cache.update([layer]) && cache.polygons[0] === originalPolygon,
+                     "unchanged references reuse exact native polygon objects across reading and selection updates")
+        suite.expect(originalPolygon.title == layer.title && originalPolygon.subtitle == layer.provenance,
+                     "cached modeled geometry retains local source labels")
+        let legacy = TMobileCoverageMapReferenceOverlay(title: "Legacy footprint", provenance: "Synthetic source", polygons: [[outer, hole]])
+        suite.expect(cache.update([legacy]) && cache.signal(for: cache.polygons[0]) == nil
+                     && cache.polygons[0].interiorPolygons?.count == 1,
+                     "legacy footprint layers retain holes without inventing a model signal value")
+        let misaligned = TMobileCoverageMapReferenceOverlay(title: "Misaligned values", provenance: "Synthetic source",
+                                                            polygons: [[outer], [outer]], modeledSignalDBm: [-90])
+        cache.update([misaligned])
+        suite.expect(cache.polygons.allSatisfy { cache.signal(for: $0) == nil },
+                     "misaligned model values fall back to plain footprint blue instead of labeling the wrong component")
+        let invalidValues = TMobileCoverageMapReferenceOverlay(title: "Invalid values", provenance: "Synthetic source",
+                                                               polygons: [[outer], [outer], [outer]], modeledSignalDBm: [.nan, -121, -49])
+        cache.update([invalidValues])
+        suite.expect(cache.polygons.allSatisfy { cache.signal(for: $0) == nil },
+                     "nonfinite and out-of-range source model signal values are never drawn as signal strength")
+        suite.expect(cache.update([]) && cache.polygons.isEmpty, "removing reference layers removes their cached geometry")
+        let weakBlue = TMobileCoverageMapDrawing.referenceColor(modeledSignalDBm: -120).usingColorSpace(.sRGB)!
+        let strongBlue = TMobileCoverageMapDrawing.referenceColor(modeledSignalDBm: -50).usingColorSpace(.sRGB)!
+        suite.expect(weakBlue.blueComponent > weakBlue.greenComponent && strongBlue.blueComponent > strongBlue.greenComponent
+                     && weakBlue.greenComponent > strongBlue.greenComponent && weakBlue.redComponent > strongBlue.redComponent,
+                     "weak to strong model gradient stays blue and becomes darker with stronger source signal")
+        suite.expect((0.20...0.30).contains(weakBlue.alphaComponent) && (0.20...0.30).contains(strongBlue.alphaComponent)
+                     && (0.20...0.30).contains(TMobileCoverageMapDrawing.referenceColor(modeledSignalDBm: nil).alphaComponent),
+                     "modeled signal and footprint fills stay visibly translucent")
+        suite.expect(TMobileCoverageMapDrawing.referenceColor(modeledSignalDBm: .infinity)
+                     == TMobileCoverageMapDrawing.referenceColor(modeledSignalDBm: nil),
+                     "invalid model strength uses the same blue fallback as an unknown value")
+        suite.expect(TMobileCoverageMapDrawing.color(value: -95, metric: .rsrp) == .systemGreen
+                     && TMobileCoverageMapDrawing.color(value: -105, metric: .rsrp) == .systemOrange
+                     && TMobileCoverageMapDrawing.color(value: -106, metric: .rsrp) == .systemRed,
+                     "measured quality colors remain distinct from the modeled blue gradient")
+        let referenceRect = originalPolygon.boundingMapRect
+        let positionPoint = MKMapPoint(CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude))
+        let localFit = TMobileCoverageMapDrawing.fitRect(positions: [coordinate], measuredRects: [bins[0].mapRect],
+                                                        referenceRects: [referenceRect], includesAllLayers: false)
+        suite.expect(localFit.contains(positionPoint) && localFit.width < referenceRect.width / 100,
+                     "initial camera prefers actual measured locations over large complete modeled polygons")
+        let towerOnlyFit = TMobileCoverageMapDrawing.fitRect(positions: [tower.coordinate], measuredRects: [],
+                                                            referenceRects: [referenceRect], includesAllLayers: false)
+        suite.expect(towerOnlyFit.contains(positionPoint) && towerOnlyFit.width < referenceRect.width / 100,
+                     "initial camera prefers tower reference coordinates when there are no measurements")
+        let fullFit = TMobileCoverageMapDrawing.fitRect(positions: [coordinate], measuredRects: [bins[0].mapRect],
+                                                       referenceRects: [referenceRect], includesAllLayers: true)
+        suite.expect(fullFit.contains(referenceRect) && fullFit.contains(bins[0].mapRect),
+                     "explicit Fit all includes every visible modeled and measured extent")
+        let modelOnlyFit = TMobileCoverageMapDrawing.fitRect(positions: [], measuredRects: [],
+                                                            referenceRects: [referenceRect], includesAllLayers: false)
+        suite.expect(modelOnlyFit.contains(referenceRect), "model-only map initially fits its complete source geometry")
+        suite.expect(TMobileCoverageMapDrawing.fitRect(positions: [.init(latitude: .nan, longitude: 0)],
+                                                       measuredRects: [], referenceRects: [], includesAllLayers: false).isNull,
+                     "empty or invalid positions never invent camera geometry")
     }
 }

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
 task_temp="$(mktemp -d "${TMPDIR:-/tmp}/tmobile-coverage-map-tests.XXXXXX")"
 trap 'rm -rf "$task_temp"' EXIT
@@ -14,7 +15,7 @@ import Foundation
     }
 }
 SWIFT
-swiftc -parse-as-library -Onone -target "$(uname -m)-apple-macosx14.0" \
+xcrun --sdk macosx swiftc -j1 -disable-batch-mode -parse-as-library -Onone -target "$(uname -m)-apple-macosx14.0" \
     -module-cache-path "${TMOBILE_COVERAGE_TEST_MODULE_CACHE:-$task_temp/module-cache}" \
     "$task_root/Sources/Vorssaint/Services/Metrics/TMobileGatewaySupport.swift" \
     "$task_root/Sources/Vorssaint/Services/Metrics/TMobileGatewayConnectedRadioSupport.swift" \
