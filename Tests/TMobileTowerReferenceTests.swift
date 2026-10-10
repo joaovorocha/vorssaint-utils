@@ -174,7 +174,7 @@ enum TMobileTowerReferenceTests {
     }
 
     private static func canonicalIdentity(_ suite: TestSuite) {
-        for raw in ["12345", "00012345", "0x310260ABCDEF", "0X310260abcdef",
+        for raw in ["12345", "00012345", "0x310260ABCDEF", "0X310260abcdef", "0xABC",
                     "001-01-12345", "310:260:abc123", "00A0", "1e3",
                     "18446744073709551616", String(repeating: "1", count: 64)] {
             suite.expect(TMobileTowerReferenceSupport.canonicalECGI(raw) == raw,
@@ -182,7 +182,7 @@ enum TMobileTowerReferenceTests {
         }
         for raw in ["", " ", " 123", "123 ", "+123", "-123", "123-", ":123", "123:",
                     "1--23", "1::23", "1-:23", "1.0", "1g3", "0x", "0X", "0x-123",
-                    "ABCDEF", "0xABC", "12_3", "１２３", "١٢٣", "123\n", "123\0",
+                    "ABCDEF", "12_3", "１２３", "١٢٣", "123\n", "123\0",
                     "0", "0000", "0x000", "0X0:0-0", String(repeating: "1", count: 65)] {
             suite.expect(TMobileTowerReferenceSupport.canonicalECGI(raw) == nil,
                          "ECGI rejects malformed, non-ASCII, all-zero and overlength text: \(raw.debugDescription)")

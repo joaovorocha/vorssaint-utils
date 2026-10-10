@@ -151,6 +151,7 @@ struct MetricsTests {
                 TMobileGatewayIndicatorTests.run(suite)
                 TMobileGatewayRadioPresentationTests.run(suite)
                 TMobileGatewayHistoryTests.run(suite)
+                TMobileTowerReferenceTests.run(suite)
                 TMobileWiFiTests.run(suite)
                 TMobileCellTelemetryTests.run(suite)
             }),

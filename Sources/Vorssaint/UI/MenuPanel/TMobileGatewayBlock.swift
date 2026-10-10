@@ -14,7 +14,6 @@ struct TMobileGatewayBlock: View {
     @State private var lastUpdated: Date?
     @State private var showingHistory = false
     @State private var showingTips = false
-    @State private var showingAllRadioMetrics = false
     @Environment(\.colorScheme) private var colorScheme
 
     private var strings: TMobileGatewayStrings { .localized(l10n.language) }
@@ -45,15 +44,14 @@ struct TMobileGatewayBlock: View {
                     } else {
                         status
                     }
-                    allRadioMetrics
+                    Button("More radio & tower details…") { TMobileCellTelemetryWindow.shared.show() }
+                        .buttonStyle(.bordered).controlSize(.small)
                     HStack {
                         Button("Signal guide & tips") { showingTips = true }
                         Spacer(minLength: 0)
                         Button("History & towers") { showingHistory = true }
                     }.buttonStyle(.bordered).controlSize(.small)
                     Button("Wi-Fi & router settings…") { TMobileWiFiSettingsWindow.shared.show() }
-                        .buttonStyle(.bordered).controlSize(.small)
-                    Button("Advanced radio & tower info…") { TMobileCellTelemetryWindow.shared.show() }
                         .buttonStyle(.bordered).controlSize(.small)
                 }
             }
@@ -159,10 +157,6 @@ struct TMobileGatewayBlock: View {
         }
     }
 
-    private var availableRadios: [TMobileGatewayRadioPresentation.Section] {
-        TMobileGatewayRadioPresentation.sections(service.snapshot)
-    }
-
     private func radioReadings(_ section: TMobileGatewayRadioPresentation.Section) -> some View {
         let radio = section.radio
         return VStack(alignment: .leading, spacing: 6) {
@@ -191,69 +185,6 @@ struct TMobileGatewayBlock: View {
         .font(.system(size: 11))
         .monospacedDigit()
         .padding(.vertical, 3)
-    }
-
-    /// Opening details never creates another reader or requests admin access.
-    /// Missing rows and wholly absent radios remain hidden in every phase.
-    private var allRadioMetrics: some View {
-        DisclosureGroup(isExpanded: $showingAllRadioMetrics) {
-            VStack(alignment: .leading, spacing: 12) {
-                if availableRadios.isEmpty {
-                    Text(service.phase == .loading
-                         ? "Waiting for gateway radio readings…"
-                         : "No radio measurements are available from the gateway.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    ForEach(Array(availableRadios.enumerated()), id: \.element.id) { index, section in
-                        if index > 0 { Divider() }
-                        radioDetails(section)
-                    }
-                    Text("Ratings are approximate placement guidance. Bar colors follow RSRP; the count comes from the gateway. Cell IDs do not provide tower coordinates.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(.top, 8)
-            .textSelection(.enabled)
-        } label: {
-            Label("All radio metrics", systemImage: "list.bullet.rectangle")
-                .font(.system(size: 11, weight: .medium))
-        }
-        .accessibilityIdentifier("tmobile.allRadioMetrics")
-    }
-
-    private func radioDetails(_ section: TMobileGatewayRadioPresentation.Section) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(section.title).font(.system(size: 11.5, weight: .semibold))
-            ForEach(section.rows) { row in detail(row) }
-            TMobileTowerReferenceView(radio: section.radio, isFiveG: section.id == "fiveG",
-                                     eNodeBID: section.radio.eNodeBID, ecgi: section.radio.ecgi)
-        }
-        .font(.system(size: 11))
-        .monospacedDigit()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(section.title) radio metrics")
-    }
-
-    private func detail(_ row: TMobileGatewayRadioPresentation.Row) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(row.label).foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-            VStack(alignment: .trailing, spacing: 1) {
-                Text(row.value)
-                    .multilineTextAlignment(.trailing)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let rating = row.qualityLabel {
-                    Text(rating).font(.system(size: 10, weight: .medium))
-                }
-            }
-            .foregroundStyle(row.quality.presentationColor(for: colorScheme))
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(row.accessibilityValue)
     }
 
     private func metric(_ row: TMobileGatewayRadioPresentation.Row) -> some View {
@@ -308,6 +239,8 @@ struct TMobileGatewayAddressEditor: View {
             Text("Show the connected radio, bars and bands together in Settings → Monitor → In the menu bar → T-Mobile connection. All radio metrics are in the gateway dropdown.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button("Local history & tower map…") { history = true }
+            Button("Radio & tower details…") { TMobileCellTelemetryWindow.shared.show() }
+                .buttonStyle(.bordered).controlSize(.small)
             Button("Wi-Fi & router settings…") { TMobileWiFiSettingsWindow.shared.show() }
         }
         .padding(16)

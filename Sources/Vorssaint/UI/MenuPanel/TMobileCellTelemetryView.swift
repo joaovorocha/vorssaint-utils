@@ -13,10 +13,10 @@ final class TMobileCellTelemetryWindow: NSObject, NSWindowDelegate {
     func show() {
         if let window { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
         let service = TMobileCellTelemetryService()
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 740),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 820),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "Advanced radio & tower info"
-        window.contentMinSize = NSSize(width: 620, height: 560)
+        window.title = "T-Mobile radio & towers"
+        window.contentMinSize = NSSize(width: 820, height: 780)
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = NSHostingView(rootView: TMobileCellTelemetryView(service: service) { [weak self] in
@@ -24,6 +24,7 @@ final class TMobileCellTelemetryWindow: NSObject, NSWindowDelegate {
         })
         self.service = service
         self.window = window
+        TMobileGatewayMonitor.shared.setRadioWindowVisible(true)
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -31,6 +32,7 @@ final class TMobileCellTelemetryWindow: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         service?.disconnect()
+        TMobileGatewayMonitor.shared.setRadioWindowVisible(false)
         service = nil
         window = nil
     }
@@ -39,6 +41,7 @@ final class TMobileCellTelemetryWindow: NSObject, NSWindowDelegate {
 /// A human-entered, window-scoped session for one read-only telemetry endpoint.
 struct TMobileCellTelemetryView: View {
     @ObservedObject var service: TMobileCellTelemetryService
+    @ObservedObject private var publicService = TMobileGatewayMonitor.shared.service
     let close: () -> Void
     @AppStorage(DefaultsKey.tMobileGatewayAddress) private var address = TMobileGatewayService.defaultBaseURL
     @Environment(\.colorScheme) private var colorScheme
@@ -46,6 +49,7 @@ struct TMobileCellTelemetryView: View {
     @State private var password = ""
     @State private var trustedNetwork = false
     @State private var requestTask: Task<Void, Never>?
+    @State private var showingAdminSignIn = false
 
     private var usesHTTP: Bool { TMobileGatewaySupport.privateLANBaseURL(address)?.scheme == "http" }
     private var busy: Bool { service.phase == .connecting || service.phase == .loading }
@@ -53,13 +57,74 @@ struct TMobileCellTelemetryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Advanced radio & tower info").font(.title2.bold())
+                Text("T-Mobile radio & towers").font(.title2.bold())
                 Spacer()
                 Button("Done") { finish() }.keyboardShortcut(.cancelAction)
             }
             Label(address, systemImage: "network").font(.callout).foregroundStyle(.secondary)
-            Text("Read serving-cell details reported by your gateway, including channel, PCI, TAC and bandwidth when available.")
-                .font(.callout).foregroundStyle(.secondary)
+            TabView {
+                radioTab.tabItem { Label("Radio", systemImage: "antenna.radiowaves.left.and.right") }
+                TMobileGatewayHistoryView(onDone: { finish() }, showsHeader: false)
+                    .tabItem { Label("History & towers", systemImage: "map") }
+                ScrollView { TMobileOpenCellIDView().padding(16) }
+                    .tabItem { Label("OpenCelliD", systemImage: "mappin.and.ellipse") }
+                towerWebsites.tabItem { Label("Websites", systemImage: "globe") }
+            }
+        }
+        .padding(22).frame(minWidth: 820, idealWidth: 860, minHeight: 780, idealHeight: 820)
+        .onChange(of: address) { _, _ in signOut(); trustedNetwork = false }
+        .onDisappear { signOut() }
+    }
+
+    private var radioTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Public gateway readings").font(.headline)
+                Spacer()
+                Button("Refresh gateway") { publicService.refresh() }.disabled(publicService.phase == .loading)
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if let snapshot = publicService.snapshot {
+                        VStack(alignment: .leading, spacing: 6) {
+                            if let model = snapshot.model { LabeledContent("Model", value: model) }
+                            if let firmware = snapshot.firmware { LabeledContent("Firmware", value: firmware) }
+                            if let uptime = snapshot.uptime, uptime < Double(Int.max) {
+                                LabeledContent("Uptime", value: MetricFormat.uptime(Int(uptime)))
+                            }
+                            if let registration = snapshot.registration { LabeledContent("Registration", value: registration) }
+                            if let roaming = snapshot.roaming { LabeledContent("Roaming", value: roaming ? "Yes" : "No") }
+                            if let apn = snapshot.apn { LabeledContent("APN", value: apn) }
+                        }.font(.callout).textSelection(.enabled)
+                    }
+                    ForEach(TMobileGatewayRadioPresentation.sections(publicService.snapshot)) { section in
+                        radio(.init(signal: section.radio, ecgi: section.radio.ecgi,
+                                    supportedBands: section.radio.supportedBands ?? []), isFiveG: section.id == "fiveG")
+                    }
+                    if publicService.snapshot == nil {
+                        Text(publicService.phase == .loading ? "Loading gateway readings…" : "Gateway readings are currently unavailable. Check the configured address and enable the T-Mobile gateway in Monitor settings.")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                    Divider()
+                    Text("Administrator radio details").font(.headline)
+                    Text("Read additional channel, PCI, TAC, CQI and bandwidth fields when your firmware provides them.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    adminStatus
+                    if let report = service.report {
+                        if let nr = report.fiveG { radio(nr, isFiveG: true) }
+                        if let lte = report.lte { radio(lte, isFiveG: false) }
+                    } else if !busy && !service.canRefresh {
+                        DisclosureGroup("Sign in for additional radio readings", isExpanded: $showingAdminSignIn) { signIn }
+                    }
+                    Text("Ratings are approximate placement guidance. Green means good or excellent, yellow means fair, and red means poor. RSSI and identifiers have no standalone quality rating. Supported bands describe capability; they do not identify connected or neighboring cells.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(12)
+            }
+        }.padding(.top, 12)
+    }
+
+    private var adminStatus: some View {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 if busy {
                     ProgressView().controlSize(.small)
@@ -71,27 +136,18 @@ struct TMobileCellTelemetryView: View {
                 if service.phase != .signedOut { Button(busy ? "Cancel & sign out" : "Sign out") { signOut() } }
             }.font(.callout)
             if let message = service.message { Text(message).font(.callout).fixedSize(horizontal: false, vertical: true) }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    if let report = service.report {
-                        if let nr = report.fiveG { radio(nr, isFiveG: true) }
-                        if let lte = report.lte { radio(lte, isFiveG: false) }
-                        Text("Ratings are approximate placement guidance. Green means good or excellent, yellow means fair, and red means poor. RSSI and identifiers have no standalone quality rating. Supported bands describe capability; they do not identify connected or neighboring cells.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else if !busy && !service.canRefresh { signIn }
-                    GroupBox("Local tower records") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Match reported node IDs or ECGI to your saved tower pins. Coordinates come from your manual pins or local files. The gateway does not provide a verified neighboring-tower list.")
-                                .font(.callout).foregroundStyle(.secondary)
-                            Button("Open history & local towers…") { TMobileLocalTowerWindow.shared.show() }
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
-                    }
-                }.padding(.trailing, 8)
-            }
         }
-        .padding(22).frame(minWidth: 620, idealWidth: 720, minHeight: 560, idealHeight: 740)
-        .onChange(of: address) { _, _ in signOut(); trustedNetwork = false }
-        .onDisappear { signOut() }
+    }
+
+    private var towerWebsites: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Tower research websites").font(.title3.bold())
+            Link("Open AntennaSearch…", destination: URL(string: "https://www.antennasearch.com/")!)
+            Link("Open FCC map…", destination: URL(string: "https://fcc.maps.arcgis.com/apps/webappviewer/index.html?id=6c1b2e73d9d749cdb7bc88a0d1bdd25b")!)
+            Text("These websites open in your browser. Enter your search area there. Listings are research references and do not prove which tower your gateway uses.")
+                .font(.callout).foregroundStyle(.secondary)
+            Spacer()
+        }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var signIn: some View {
@@ -146,24 +202,4 @@ struct TMobileCellTelemetryView: View {
     }
     private func signOut() { requestTask?.cancel(); requestTask = nil; password = ""; service.disconnect() }
     private func finish() { signOut(); close() }
-}
-
-/// Local file editing remains separate from the temporary administrator report.
-@MainActor
-private final class TMobileLocalTowerWindow: NSObject, NSWindowDelegate {
-    static let shared = TMobileLocalTowerWindow()
-    private var window: NSWindow?
-    func show() {
-        if let window { window.makeKeyAndOrderFront(nil); return }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 780),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "History & local towers"
-        window.contentMinSize = NSSize(width: 740, height: 650)
-        window.isReleasedWhenClosed = false
-        window.delegate = self
-        window.contentView = NSHostingView(rootView: TMobileGatewayHistoryView(onDone: { [weak self] in self?.window?.performClose(nil) }))
-        self.window = window
-        window.center(); window.makeKeyAndOrderFront(nil)
-    }
-    func windowWillClose(_ notification: Notification) { window = nil }
 }

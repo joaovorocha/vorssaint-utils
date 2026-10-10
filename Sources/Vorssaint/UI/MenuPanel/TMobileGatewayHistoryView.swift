@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct TMobileGatewayHistoryView: View {
     private let onDone: (() -> Void)?
+    private let showsHeader: Bool
     @ObservedObject private var store = TMobileGatewayHistoryStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var importing = false
@@ -14,7 +15,7 @@ struct TMobileGatewayHistoryView: View {
     @State private var useFiveG = true
     @State private var clearingHistory = false
     @State private var towerQuery = ""
-    init(onDone: (() -> Void)? = nil) { self.onDone = onDone }
+    init(onDone: (() -> Void)? = nil, showsHeader: Bool = true) { self.onDone = onDone; self.showsHeader = showsHeader }
     private var visibleTowers: [TMobileTowerPin] {
         store.towers.filter { towerQuery.isEmpty || $0.name.localizedCaseInsensitiveContains(towerQuery)
             || $0.bands.localizedCaseInsensitiveContains(towerQuery) || ($0.cellID ?? "").localizedCaseInsensitiveContains(towerQuery)
@@ -24,11 +25,11 @@ struct TMobileGatewayHistoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
+            if showsHeader { HStack {
                 Text("T-Mobile history & towers").font(.title2.bold())
                 Spacer()
                 Button("Done") { if let onDone { onDone() } else { dismiss() } }.keyboardShortcut(.cancelAction)
-            }
+            } }
             Toggle("Record local signal history", isOn: $store.isRecording)
             Text("Saves one sample per minute while Shadow Utilities is running. Keeps up to 7 days / 10,000 readings on this Mac. No GPS, online tower lookup or uploads.")
                 .font(.caption).foregroundStyle(.secondary)

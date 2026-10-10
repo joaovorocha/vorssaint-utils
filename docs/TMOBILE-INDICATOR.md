@@ -29,8 +29,9 @@ Other bands retain the plain 5G badge.
 
 ## All radio metrics
 
-Click the connection indicator, then expand **All radio metrics** in the
-**T-Mobile gateway** block. Separate 5G and LTE / 4G sections show every radio
+Click the connection indicator, then choose **More radio & tower details…** in
+the **T-Mobile gateway** block. A separate window has Radio, History & towers,
+OpenCelliD and Websites tabs. Separate 5G and LTE / 4G sections show every radio
 field the existing public-status parser supports: bars, bands, RSRP, RSRQ,
 RSSI, SINR, antenna, bandwidth, channel (NR-ARFCN or EARFCN), PCI, TAC, CQI,
 gNB ID, eNB ID, cell ID, ECGI and supported-band capability when returned.
@@ -44,11 +45,12 @@ RSRP placement guidance while the count stays exactly as the gateway reports.
 These are approximate app ratings, not T-Mobile ratings or a speed prediction;
 the boundaries are documented in [Signal readings](TMOBILE-SIGNAL-GUIDE.md).
 
-The disclosure remains available during initial loading or a failed request,
-with an explanatory empty state. The existing refresh, signal guide, local
-history/tower map and Wi-Fi controls remain available. The dropdown continues
-to use the public reader. **Advanced radio & tower info…** opens an optional
-administrator session for the additional serving-cell endpoint, described in
+The window remains available during initial loading or a failed request,
+with an explanatory empty state. It shares the existing public reader and keeps
+it active while the window is open and the gateway feature is enabled. The
+compact dropdown retains summary readings, signal guide and Wi-Fi controls.
+The Radio tab has an optional administrator session for the additional
+serving-cell endpoint, described in
 [Advanced radio details](TMOBILE-RADIO-INSIGHTS.md).
 
 ## Preference compatibility and verification

@@ -19,6 +19,7 @@ final class TMobileGatewayMonitor {
     private let historyIsRecording: () -> Bool
     private let recordSnapshot: (TMobileGatewaySnapshot, Date) -> Void
     private var panelVisible = false
+    private var radioWindowVisible = false
     private var historyOverride: Bool?
     private var isPolling = false
     private var cancellables = Set<AnyCancellable>()
@@ -58,6 +59,11 @@ final class TMobileGatewayMonitor {
         syncPreferences()
     }
 
+    func setRadioWindowVisible(_ visible: Bool) {
+        radioWindowVisible = visible
+        syncPreferences()
+    }
+
     func setHistoryEnabled(_ enabled: Bool) {
         historyOverride = enabled
         syncPreferences()
@@ -67,7 +73,7 @@ final class TMobileGatewayMonitor {
         let menuBarEnabled = MenuBarMetric.enabled(in: defaults).contains { $0.tMobileReading != nil }
         let shouldPoll = TMobileGatewayMenuBarSupport.needsPolling(
             networkAvailable: defaults.bool(forKey: AppFeature.monitorNetwork.availabilityKey),
-            panelVisible: panelVisible, panelEnabled: defaults.bool(forKey: DefaultsKey.monitorNetTMobile),
+            panelVisible: panelVisible || radioWindowVisible, panelEnabled: defaults.bool(forKey: DefaultsKey.monitorNetTMobile),
             menuBarEnabled: menuBarEnabled, historyEnabled: historyOverride ?? historyIsRecording())
         if shouldPoll {
             // start() is idempotent for the current validated address and

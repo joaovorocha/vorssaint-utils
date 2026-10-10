@@ -564,6 +564,7 @@ if (( TEST )); then
         Sources/Vorssaint/Services/Metrics/TMobileGatewayRadioPresentation.swift
         Sources/Vorssaint/Services/Metrics/TMobileGatewayMenuBarSupport.swift
         Sources/Vorssaint/Services/Metrics/TMobileGatewayHistorySupport.swift
+        Sources/Vorssaint/Services/Metrics/TMobileTowerReferenceSupport.swift
         Sources/Vorssaint/Services/Metrics/TMobileGatewayHistoryStore.swift
         Sources/Vorssaint/Services/Metrics/TMobileGatewayService.swift
         Sources/Vorssaint/Services/Metrics/TMobileWiFiSupport.swift

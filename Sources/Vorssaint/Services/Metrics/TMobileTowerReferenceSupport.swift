@@ -35,7 +35,8 @@ enum TMobileTowerReferenceSupport {
         guard !value.isEmpty, value.utf8.count <= 64 else { return nil }
         let body = value.hasPrefix("0x") || value.hasPrefix("0X") ? String(value.dropFirst(2)) : value
         guard !body.isEmpty else { return nil }
-        var hasDigit = false, hasNonzero = false, previousSeparator = true
+        var hasDigit = value.utf8.contains(where: { (48...57).contains($0) })
+        var hasNonzero = false, previousSeparator = true
         for character in body.utf8 {
             if character == 45 || character == 58 {
                 guard !previousSeparator else { return nil }
