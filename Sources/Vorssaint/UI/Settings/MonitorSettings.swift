@@ -24,6 +24,8 @@ struct MonitorSettings: View {
     @AppStorage(DefaultsKey.networkSpeedUnit) private var networkSpeedUnit = NetworkSpeedUnit.bytes
     @AppStorage(DefaultsKey.monitorMemoryMetric) private var memoryMetric = "used"
     @AppStorage(DefaultsKey.panelShowFanControl) private var showFanControl = true
+    @AppStorage(DefaultsKey.monitorNetTMobile) private var showTMobileGateway = false
+    @State private var configuringTMobile = false
 
     var body: some View {
         ScrollView {
@@ -35,6 +37,8 @@ struct MonitorSettings: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                coverageCard
+                    .settingsSectionAnchor(.tMobileCoverage, cornerRadius: 16)
                 groupHeading(l10n.s.monitorMenuBarSection, symbol: "menubar.rectangle")
                 // Everything under this header changes what the header
                 // shows, so it stays in view until the section ends.
@@ -90,6 +94,26 @@ struct MonitorSettings: View {
 
     private var appearance: MenuBarMetricAppearance {
         MenuBarMetricAppearance(rawValue: Defaults.sanitizedMenuBarMetricAppearance(metricAppearance)) ?? .values
+    }
+
+    private var coverageCard: some View {
+        let strings = TMobileGatewayStrings.localized(l10n.language)
+        return SettingsCard(title: "T-Mobile Coverage") {
+            SettingsFeatureSwitchRow(symbol: "antenna.radiowaves.left.and.right", title: strings.enable,
+                                     caption: "Show live gateway readings in the Network panel.",
+                                     isOn: $showTMobileGateway, feature: .monitorNetwork)
+            Text("View saved sessions, radio measurements and tower references. Start recording in Coverage to save a new session.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Open Coverage…") { TMobileCellTelemetryWindow.shared.show() }
+                Button(strings.configure) { configuringTMobile = true }
+                    .popover(isPresented: $configuringTMobile) {
+                        TMobileGatewayAddressEditor()
+                    }
+            }
+        }
     }
 
     /// The readings that can sit in the menu bar, as tiles in the order they

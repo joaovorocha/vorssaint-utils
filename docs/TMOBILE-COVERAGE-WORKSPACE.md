@@ -1,6 +1,8 @@
 # T-Mobile Coverage workspace
 
-Open **Coverage, radio & towers…** from the T-Mobile section. The window combines live available radio metrics, saved sessions, four linked charts, Apple Maps, local tower references and optional OpenCelliD lookup. Existing gateway and Wi-Fi controls remain available.
+Open **Settings → Monitor → T-Mobile Coverage → Open Coverage…**, or **Coverage, radio & towers…** from the T-Mobile section. Settings search also finds “Coverage” and “Recording.” The window combines live available radio metrics, saved sessions, four linked charts, Apple Maps, local tower references and optional OpenCelliD lookup. Existing gateway and Wi-Fi controls remain available.
+
+The Settings card exposes the existing **Show T-Mobile gateway** switch and gateway configuration. This switch shows live readings in the Network panel; recording starts only when you choose **Start recording** inside Coverage. **Open Coverage…** remains available with the switch off so saved sessions can still be viewed. Opening Settings does not start recording or request location access.
 
 ## Recording
 
@@ -52,7 +54,7 @@ Both custom-labeled inspector row containers now use `.accessibilityElement(chil
 
 Runtime regression procedure (an app build and calculation tests alone do not cover this):
 
-1. Open Coverage with a saved session and read its accessibility tree.
+1. Open Coverage from Settings → Monitor with a saved session and read its accessibility tree. Confirm the Settings enable switch uses the existing gateway preference and Coverage remains accessible with it off.
 2. Start a named verification session; repeatedly read the tree while fresh gateway samples update RSRP and SINR.
 3. Expand **Available radio details** and confirm complete metric summaries. Check text copying and keyboard access to controls.
 4. Stop recording, close/reopen Coverage several times, switch saved sessions, and repeat accessibility reads.
