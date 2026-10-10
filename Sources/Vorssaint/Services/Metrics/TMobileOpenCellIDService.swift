@@ -4,11 +4,12 @@
 import Combine
 import Foundation
 
-/// One human-requested provider lookup. No token store, polling, uploads,
+/// One human-requested cell or bounded-area lookup. No token store, polling, uploads,
 /// fallback endpoint, public-reader integration or local-history side effect.
 @MainActor
 final class TMobileOpenCellIDService: ObservableObject {
     @Published private(set) var result: TMobileOpenCellIDResult?
+    @Published private(set) var areaResults: [TMobileOpenCellIDResult] = []
     @Published private(set) var phase: TMobileOpenCellIDPhase = .idle
     @Published private(set) var message: String?
     private let configuration: URLSessionConfiguration
@@ -31,24 +32,8 @@ final class TMobileOpenCellIDService: ObservableObject {
         do {
             try Task.checkCancellation()
             let url = try TMobileOpenCellIDSupport.requestURL(identity: identity, token: token)
-            let config = configuration.copy() as! URLSessionConfiguration
-            config.urlCache = nil; config.requestCachePolicy = .reloadIgnoringLocalCacheData
-            config.httpCookieStorage = nil; config.httpShouldSetCookies = false; config.urlCredentialStorage = nil
-            config.httpAdditionalHeaders = nil; config.connectionProxyDictionary = [:]
-            config.timeoutIntervalForRequest = 15; config.timeoutIntervalForResource = 15; config.waitsForConnectivity = false
-            let transport = TMobileOpenCellIDSessionDelegate()
-            let session = URLSession(configuration: config, delegate: transport, delegateQueue: nil)
-            self.session = session
-            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
-            request.httpMethod = "GET"; request.httpShouldHandleCookies = false
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-            let (data, response) = try await transport.send(request, session: session)
-            try Task.checkCancellation()
+            let data = try await fetch(url)
             guard generation == current else { return }
-            guard response.url == url else { throw TMobileOpenCellIDFailure.invalidResponse }
-            if response.statusCode == 401 || response.statusCode == 403 { throw TMobileOpenCellIDFailure.authentication }
-            if response.statusCode == 429 { throw TMobileOpenCellIDFailure.limit }
-            guard (200...299).contains(response.statusCode) else { throw TMobileOpenCellIDFailure.unavailable }
             result = try TMobileOpenCellIDSupport.parse(data, requested: identity)
             phase = .ready; message = nil
             self.session?.invalidateAndCancel(); self.session = nil
@@ -62,10 +47,65 @@ final class TMobileOpenCellIDService: ObservableObject {
         }
     }
 
+    func search(area: TMobileOpenCellIDArea, radio: TMobileOpenCellIDRadio,
+                token: String, approvedAreaSharing: Bool) async {
+        guard phase != .loading else { return }
+        clear()
+        guard approvedAreaSharing, TMobileOpenCellIDSupport.validToken(token) else {
+            phase = .failed; message = "Enter an API key and choose Find cells near map center."; return
+        }
+        let current = generation
+        phase = .loading
+        do {
+            let url = try TMobileOpenCellIDAreaSupport.requestURL(area: area, radio: radio, token: token)
+            let data = try await fetch(url)
+            guard generation == current else { return }
+            areaResults = try TMobileOpenCellIDAreaSupport.parse(data, area: area, radio: radio)
+            phase = .ready
+            message = areaResults.isEmpty
+                ? "No \(radio.rawValue) cells were returned here. Try LTE or move the map. Missing community records do not mean there is no mobile service."
+                : "Loaded \(areaResults.count) community cell estimates. These do not identify your connected tower."
+            session?.invalidateAndCancel(); session = nil
+        } catch {
+            guard generation == current else { return }
+            session?.invalidateAndCancel(); session = nil; areaResults = []
+            phase = .failed
+            if error is CancellationError || (error as? URLError)?.code == .cancelled {
+                message = TMobileOpenCellIDFailure.cancelled.message
+            } else if (error as? TMobileOpenCellIDFailure) == .notFound {
+                message = "OpenCellID has no cell estimates for this search. Try another radio or move the map."
+            } else if (error as? TMobileOpenCellIDFailure) == .invalidInput {
+                message = "OpenCellID rejected the search area or key. Check the key and move the map to try again."
+            } else { message = ((error as? TMobileOpenCellIDFailure) ?? .unavailable).message }
+        }
+    }
+
+    private func fetch(_ url: URL) async throws -> Data {
+        let config = configuration.copy() as! URLSessionConfiguration
+        config.urlCache = nil; config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.httpCookieStorage = nil; config.httpShouldSetCookies = false; config.urlCredentialStorage = nil
+        config.httpAdditionalHeaders = nil; config.connectionProxyDictionary = [:]
+        config.timeoutIntervalForRequest = 15; config.timeoutIntervalForResource = 15; config.waitsForConnectivity = false
+        let transport = TMobileOpenCellIDSessionDelegate()
+        let session = URLSession(configuration: config, delegate: transport, delegateQueue: nil)
+        self.session = session
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        request.httpMethod = "GET"; request.httpShouldHandleCookies = false
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await transport.send(request, session: session)
+        try Task.checkCancellation()
+        guard response.url == url else { throw TMobileOpenCellIDFailure.invalidResponse }
+        if response.statusCode == 400 { throw TMobileOpenCellIDFailure.invalidInput }
+        if response.statusCode == 401 || response.statusCode == 403 { throw TMobileOpenCellIDFailure.authentication }
+        if response.statusCode == 429 { throw TMobileOpenCellIDFailure.limit }
+        guard (200...299).contains(response.statusCode) else { throw TMobileOpenCellIDFailure.unavailable }
+        return data
+    }
+
     func clear() {
         generation += 1
         session?.invalidateAndCancel(); session = nil
-        result = nil; message = nil; phase = .idle
+        result = nil; areaResults = []; message = nil; phase = .idle
     }
 }
 

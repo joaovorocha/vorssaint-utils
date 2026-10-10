@@ -2,19 +2,19 @@
 
 Open **Settings → Monitor → T-Mobile Coverage → Open Coverage…**, or **Coverage, radio & towers…** from the T-Mobile section. Settings search also finds “Coverage” and “Recording.” The window combines live available radio metrics, saved sessions, four linked charts, Apple Maps, local tower references and optional OpenCelliD lookup. Existing gateway and Wi-Fi controls remain available.
 
-The Settings card exposes the existing **Show T-Mobile gateway** switch and gateway configuration. This switch shows live readings in the Network panel; recording starts only when you choose **Start recording** inside Coverage. **Open Coverage…** remains available with the switch off so saved sessions can still be viewed. Opening Settings does not start recording or request location access.
+The Settings card exposes the existing **Show T-Mobile gateway** switch and gateway configuration. This switch shows live readings in the Network panel. Recording starts with **Start recording** inside Coverage, or at app launch when **Automatically start recording** is enabled. **Open Coverage…** remains available with the switch off so saved sessions can still be viewed. Opening Settings does not start recording or request location access.
 
 ## Recording
 
-Choose a session name and **Start recording**. Location permission is requested only after this action or **Use Mac location**. The Mac's Core Location position may come from Wi-Fi; it is not presented as a dedicated GPS receiver. Original source, timestamp and reported accuracy are retained. Latitude/longitude corrections append revisions without replacing the original fix.
+Choose a session name and **Start recording**, or enable **Automatically start recording** in Settings → Monitor → T-Mobile Coverage. This opt-in preference starts a new local session each time the app launches, including launch at login; opening the Coverage window is unnecessary. Manual Stop lasts until the next app launch. The separate General → Launch at login preference controls whether macOS launches the app at login. Location permission is requested only after recording starts or **Use Mac location**. The Mac's Core Location position may come from Wi-Fi; it is not presented as a dedicated GPS receiver. Original source, timestamp and reported accuracy are retained. Latitude/longitude corrections append revisions without replacing the original fix.
 
-Each fresh public gateway poll creates an observation. Missing radio fields remain absent. Sleep, display sleep and a closed laptop lid pause recording and cancel speed tests; reopening and display wake resume with fresh context. Quitting closes the session. A crash leaves an explicitly unfinished session, and relaunch never starts recording automatically. No service keeps the Mac awake.
+Each fresh public gateway poll creates an observation. Missing radio fields remain absent. Sleep, display sleep and a closed laptop lid pause recording and cancel speed tests; reopening and display wake resume with fresh context. Quitting closes the session. A crash leaves an explicitly unfinished session; a later launch starts a new session only if automatic recording is enabled. No service keeps the Mac awake.
 
 The app requests fresh stationary positions every 20 seconds while recording. The provider can still return imprecise or unavailable locations. A manual correction can place an already saved reading on the map; it does not invent an automatic location for a speed test.
 
 ## Parked speed tests
 
-The automatic-test toggle defaults on for an explicitly started session. Tests require two minutes of stable fixes no older than 30 seconds and within ±100 m. A new stop must be more than 250 m away after accounting for both locations' uncertainty. There is a 15-minute cooldown. Attempts are saved before network activity so relaunch or a failed test does not repeatedly test the same stop. Moving to a different stop permits a later revisit.
+The automatic-test toggle defaults on for a recording session. Tests require two minutes of stable fixes no older than 30 seconds and within ±100 m. A new stop must be more than 250 m away after accounting for both locations' uncertainty. There is a 15-minute cooldown. Attempts are saved before network activity so relaunch or a failed test does not repeatedly test the same stop. Moving to a different stop permits a later revisit.
 
 Coverage tests use the existing Cloudflare test service with three-second transfer windows, requesting a maximum 20 MB download and 5 MB upload per test, plus small latency requests and transport overhead. The service receives the network address. A manual test requires an active session and fresh radio observation. Cancel, sleep and lid closure stop the test. Movement, stale location or changed radio context excludes a combined score. Tests retain their own actual start/end locations and times.
 
@@ -28,9 +28,13 @@ RSRP and SINR colors use the existing radio guide. Download guidance uses green 
 
 ## Tower and FCC references
 
-Local tower JSON/CSV and manual pins share the map. OpenCelliD lookup remains manual, requires full verified network identifiers and a token entered in the window, and sends only that request to the provider. **Save estimate to reference map** explicitly retains the returned position, radio/full cell identity, MCC/MNC/TAC, lookup date and reported range/sample count. Credentials are never included. Saved positions remain unverified references with OpenCelliD/CC BY-SA attribution; range is not measured coverage.
+Local tower JSON/CSV and manual pins share the map. For OpenCellID, paste an API key, pan the map to the desired area, select LTE or 5G and choose **Find cells near map center**. One explicit request searches a 1.8 km square, below the provider’s 4 km² limit, and returns at most 50 community estimates. The app does not page, poll, infer a serving tower or expand gateway identity fragments. Returned positions are temporary map references with source/license links; an empty result does not establish missing mobile coverage. **Advanced: look up a full cell identifier** retains the verified manual MCC/MNC/TAC/full ECI or NCI workflow. **Save estimate to reference map** explicitly retains the returned position, radio/full cell identity, MCC/MNC/TAC, lookup date and reported range/sample count. Credentials are never included. Saved positions remain unverified references with OpenCelliD/CC BY-SA attribution; range is not measured coverage.
 
 FCC reference import accepts local Polygon/MultiPolygon GeoJSON FeatureCollections up to 5 MB, 1,000 polygons and 100,000 coordinates. Enter the dataset publication date. Properties are discarded, geometry and date are saved locally, and purple boundaries identify this separate carrier-reported modeled layer. File origin is operator-declared; there is no automatic FCC download or verification. The supplied FCC and AntennaSearch research links open in the browser when selected. Apple Maps supplies the basemap through MapKit.
+
+## Credentials
+
+Both gateway administrator sign-in forms have **Remember on this Mac**, **Use saved password** and **Forget saved password**. Remember saves only after successful sign-in, scoped to the exact private gateway origin and username. Saved passwords are loaded only by the explicit Use action; sign-in remains manual. API keys have separate explicit Save, Use and Forget controls scoped to OpenCellID. Saving a key does not validate it with the provider. Keys remain in memory across lookup and field edits, then clear when the lookup view closes. Keychain items stay local, do not sync and have no plaintext fallback. Opening the UI or changing gateway address never reads saved credentials.
 
 ## Storage and future Shadow connection
 
@@ -43,6 +47,8 @@ See [archive format and recovery](TMOBILE-COVERAGE-ARCHIVE.md). Advanced adminis
 - `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./build.sh --fork --test-suite=tmobile --test-suite=network`
 - `zsh Tests/TMobileCoverageStoreTests.sh`
 - `bash Tests/TMobileCoverageMapChartsTests.sh`
+- `zsh Tests/TMobileOpenCellIDServiceTests.sh`
+- `zsh Tests/TMobileGatewayCredentialTests.sh`
 
 These checks use synthetic readings and intercepted test traffic. Live Mac permission/accuracy, real parked detection, physical sleep/lid transitions, map rendering and gateway/provider responses require a supervised app run.
 
@@ -58,4 +64,4 @@ Runtime regression procedure (an app build and calculation tests alone do not co
 2. Start a named verification session; repeatedly read the tree while fresh gateway samples update RSRP and SINR.
 3. Expand **Available radio details** and confirm complete metric summaries. Check text copying and keyboard access to controls.
 4. Stop recording, close/reopen Coverage several times, switch saved sessions, and repeat accessibility reads.
-5. Relaunch the app and confirm recording stays off and the saved sessions remain available.
+5. With automatic recording off, relaunch and confirm recording stays off. Enable automatic recording, relaunch with Coverage closed, and confirm a new session collects samples. Stop must hold until the next launch. Saved sessions must remain available.

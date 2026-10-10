@@ -85,17 +85,8 @@ enum TMobileOpenCellIDSupport {
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw TMobileOpenCellIDFailure.invalidResponse
         }
-        var count = 0
-        guard validJSON(root, depth: 0, count: &count) else { throw TMobileOpenCellIDFailure.invalidResponse }
-        if root["error"] != nil || root["code"] != nil {
-            switch integer(root["code"]) {
-            case 1: throw TMobileOpenCellIDFailure.notFound
-            case 2: throw TMobileOpenCellIDFailure.authentication
-            case 3: throw TMobileOpenCellIDFailure.invalidInput
-            case 7: throw TMobileOpenCellIDFailure.limit
-            default: throw TMobileOpenCellIDFailure.unavailable
-            }
-        }
+        guard validResponseJSON(root) else { throw TMobileOpenCellIDFailure.invalidResponse }
+        if let failure = providerFailure(root) { throw failure }
         guard root["radio"] as? String == identity.radio.rawValue,
               integer(root["mcc"]) == unsigned(identity.mcc), integer(root["mnc"]) == unsigned(identity.mnc),
               integer(root["lac"]) == UInt64(identity.tac), integer(root["cellid"]) == identity.cellID else {
@@ -112,6 +103,20 @@ enum TMobileOpenCellIDSupport {
                      rangeMeters: range, samples: samples, changeable: changeable)
     }
 
+    /// Provider error text can echo the submitted key. Never expose it.
+    static func providerFailure(_ root: [String: Any]) -> TMobileOpenCellIDFailure? {
+        if root["error"] != nil || root["code"] != nil {
+            switch integer(root["code"]) {
+            case 1: return .notFound
+            case 2: return .authentication
+            case 3: return .invalidInput
+            case 7: return .limit
+            default: return .unavailable
+            }
+        }
+        return nil
+    }
+
     static func unsigned(_ value: String) -> UInt64? {
         guard !value.isEmpty, value.utf8.count <= 20, value.utf8.allSatisfy({ (48...57).contains($0) }) else { return nil }
         return UInt64(value)
@@ -124,16 +129,20 @@ enum TMobileOpenCellIDSupport {
         guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite else { return nil }
         return number.doubleValue
     }
-    private static func validJSON(_ value: Any, depth: Int, count: inout Int) -> Bool {
+    static func validResponseJSON(_ value: Any, maximumValues: Int = 1024) -> Bool {
+        var count = 0
+        return validJSON(value, depth: 0, count: &count, maximumValues: maximumValues)
+    }
+    private static func validJSON(_ value: Any, depth: Int, count: inout Int, maximumValues: Int) -> Bool {
         count += 1
-        guard count <= 1024, depth <= 8 else { return false }
+        guard count <= maximumValues, depth <= 8 else { return false }
         if let object = value as? [String: Any] {
             return object.count <= 128 && object.allSatisfy { key, child in
-                key.utf8.count <= 128 && validJSON(child, depth: depth + 1, count: &count)
+                key.utf8.count <= 128 && validJSON(child, depth: depth + 1, count: &count, maximumValues: maximumValues)
             }
         }
         if let values = value as? [Any] {
-            return values.count <= 128 && values.allSatisfy { validJSON($0, depth: depth + 1, count: &count) }
+            return values.count <= 128 && values.allSatisfy { validJSON($0, depth: depth + 1, count: &count, maximumValues: maximumValues) }
         }
         if let string = value as? String { return string.utf8.count <= 8192 }
         if let number = value as? NSNumber { return number.doubleValue.isFinite }

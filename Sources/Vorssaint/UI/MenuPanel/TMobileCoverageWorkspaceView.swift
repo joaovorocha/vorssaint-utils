@@ -99,6 +99,7 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
             }.font(.caption).foregroundStyle(.secondary).padding(12)
         }
         .frame(minWidth: 860, minHeight: 700)
+        .onDisappear { lookupCells = []; lookupRegion = nil }
         .onChange(of: store.selectedSessionID) { _, _ in selectedID = nil; latitude = ""; longitude = "" }
         .onChange(of: selected?.id) { _, _ in latitude = ""; longitude = "" }
         .fileImporter(isPresented: $importTowers, allowedContentTypes: [.json, .commaSeparatedText]) { result in
@@ -385,6 +386,7 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
     }
 
     private func showOpenCellIDResults(_ results: [TMobileOpenCellIDResult]) {
+        if !results.isEmpty { showTowers = true }
         var seen = Set<MapReferenceKey>()
         lookupCells = results.map { result in
             TMobileTowerPin(name: "OpenCellID \(result.identity.radio.rawValue) cell estimate", latitude: result.latitude,

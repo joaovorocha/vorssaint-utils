@@ -567,6 +567,7 @@ if (( TEST )); then
         Sources/Vorssaint/Services/Metrics/TMobileTowerReferenceSupport.swift
         Sources/Vorssaint/Services/Metrics/TMobileGatewayHistoryStore.swift
         Sources/Vorssaint/Services/Metrics/TMobileCoverageSupport.swift
+        Sources/Vorssaint/Services/Metrics/TMobileCoverageRecordingStartup.swift
         Sources/Vorssaint/Services/Metrics/TMobileCoverageStore.swift
         Sources/Vorssaint/Services/Metrics/TMobileCoverageParkedSupport.swift
         Sources/Vorssaint/Services/Metrics/TMobileCoverageReferenceSupport.swift
@@ -578,6 +579,7 @@ if (( TEST )); then
         Sources/Vorssaint/Services/Metrics/TMobileCellTelemetrySupport.swift
         Sources/Vorssaint/Services/Metrics/TMobileCellTelemetryService.swift
         Sources/Vorssaint/Services/Metrics/TMobileOpenCellIDSupport.swift
+        Sources/Vorssaint/Services/Metrics/TMobileOpenCellIDAreaSupport.swift
         Sources/Vorssaint/Services/Metrics/TMobileOpenCellIDService.swift
         Sources/Vorssaint/Core/TMobileGatewayStrings.swift
         Sources/Vorssaint/Services/Metrics/SpeedTest.swift
