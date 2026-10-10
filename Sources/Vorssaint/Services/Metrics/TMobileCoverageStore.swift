@@ -57,7 +57,10 @@ import Foundation
     }
 
     @discardableResult func beginSession(name: String = "Coverage session", at date: Date = Date()) -> UUID? {
-        guard currentSessionID == nil else { return currentSessionID }
+        guard currentSessionID == nil else {
+            errorMessage = "A coverage session is still open. Stop it before starting another. If saving its end failed, restart the app; its saved readings are retained."
+            return nil
+        }
         let session = TMobileCoverageSession(name: name, startedAt: date)
         guard session.isValid else { fail(.invalidRecord); return nil }
         var state = State(session: session)

@@ -18,6 +18,8 @@ import Foundation
         expect(!FileManager.default.fileExists(atPath: folder.path), "constructing archive creates no files")
         expect(store.record(snapshot: snapshot, at: now, location: fix) == nil, "record requires explicit session")
         let session = store.beginSession(name: "Synthetic session", at: now)!
+        expect(store.beginSession(name: "Different session", at: now) == nil && store.currentSessionID == session,
+               "starting an existing active archive never silently reuses its identity")
         let id = store.record(snapshot: snapshot, at: now, location: fix)!
         expect(store.record(snapshot: snapshot, at: now, location: fix) == id && store.observations.count == 1, "duplicate timestamp/snapshot/fix is idempotent")
         expect(store.observations[0].connectionScore == nil && store.observations[0].downloadMbps == nil, "untested sample has neither speed nor complete score")
@@ -129,6 +131,12 @@ import Foundation
                "second writer can append a legitimate archived correction")
         expect(writerA.record(snapshot: snapshot, at: now.addingTimeInterval(2), location: fix) == nil && writerA.errorMessage != nil,
                "stale writer cannot overwrite or duplicate a committed sequence")
+        writerA.endSession(at: now.addingTimeInterval(2))
+        expect(writerA.currentSessionID == concurrentID && writerA.errorMessage != nil, "failed durable end remains an unfinished session")
+        expect(writerA.beginSession(name: "Must be a new session", at: now.addingTimeInterval(3)) == nil
+               && writerA.currentSessionID == concurrentID && writerA.sessions.count == 1
+               && writerA.errorMessage?.contains("still open") == true,
+               "starting after failed close is rejected explicitly rather than resuming prior archive")
         let concurrentReplay = TMobileCoverageStore(folder: concurrentFolder)
         expect(concurrentReplay.errorMessage == nil && concurrentReplay.observations.count == 1 && concurrentReplay.observations[0].corrections.count == 1,
                "concurrent sequence collision leaves a valid complete archive")

@@ -8,6 +8,8 @@ Each session has a stable UUID directory under the app's `T-Mobile/Coverage` App
 
 Published state advances only after the event is committed. A failed write surfaces an error and does not claim an unsaved reading. No retention timer removes old sessions. Explicit session deletion removes that session's files; it requires recording to stop first. Local observations remain retained regardless of future upload status.
 
+If the durable session-end write fails, that session remains unfinished. Starting another session is rejected explicitly rather than silently reusing the old UUID or ignoring the requested name. Restarting the app clears the active recording handle while preserving every committed event; a newly started session then receives a new identity.
+
 Replaying the journal validates schema, sequence, session identity, bounded record size, normalized gateway values, times, coordinates and finite accuracy/test measurements. A corrupt event leaves the original files intact. A valid prefix may be displayed, with an error; the damaged session cannot receive mutations or be exported as a complete archive. No attempt is made to rewrite away corrupt data. An unfinished session from a crash remains unfinished; the archive does not invent an end time or an unobserved gap duration.
 
 ## Position and missing data
