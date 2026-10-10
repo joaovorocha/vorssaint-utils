@@ -42,6 +42,8 @@ final class SpeedTest: NSObject, ObservableObject {
     // keeps a fast link's pipe full for a full measurement window.
     private let downloadBytes = 90_000_000
     private let uploadBytes = 100_000_000
+    private let maximumDownloadBytes: Int?
+    private let maximumUploadBytes: Int?
 
     private let queue = OperationQueue()
     private var session: URLSession!
@@ -54,6 +56,7 @@ final class SpeedTest: NSObject, ObservableObject {
     private var cancelTimeBox: (() -> Void)?
 
     init(configuration: URLSessionConfiguration = .ephemeral, sampleSeconds: TimeInterval = 5,
+         maximumDownloadBytes: Int? = nil, maximumUploadBytes: Int? = nil,
          clock: @escaping Clock = { ProcessInfo.processInfo.systemUptime },
          scheduleTimeBox: @escaping TimeBoxScheduler = { queue, delay, action in
              let work = DispatchWorkItem { queue.addOperation(action) }
@@ -61,6 +64,8 @@ final class SpeedTest: NSObject, ObservableObject {
              return { work.cancel() }
          }) {
         self.sampleSeconds = sampleSeconds
+        self.maximumDownloadBytes = maximumDownloadBytes.map { max(1, min($0, 90_000_000)) }
+        self.maximumUploadBytes = maximumUploadBytes.map { max(1, min($0, 100_000_000)) }
         self.clock = clock
         self.scheduleTimeBox = scheduleTimeBox
         super.init()
@@ -151,12 +156,14 @@ final class SpeedTest: NSObject, ObservableObject {
         guard !finished else { return }
         let task: URLSessionTask
         if kind == .download {
-            task = session.dataTask(with: URL(string: "\(host)/__down?bytes=\(downloadBytes)")!)
+            let remaining = maximumDownloadBytes.map { max(0, $0 - Int(transferred)) } ?? downloadBytes
+            guard remaining > 0 else { finishTransfer(timedOut: false); return }
+            task = session.dataTask(with: URL(string: "\(host)/__down?bytes=\(remaining)")!)
         } else {
             var request = URLRequest(url: URL(string: "\(host)/__up")!)
             request.httpMethod = "POST"
             request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-            task = session.uploadTask(with: request, from: Data(count: uploadBytes))
+            task = session.uploadTask(with: request, from: Data(count: maximumUploadBytes ?? uploadBytes))
         }
         self.task = task
         task.resume()
@@ -164,6 +171,9 @@ final class SpeedTest: NSObject, ObservableObject {
 
     private func finishTransfer(timedOut: Bool) {
         guard !finished else { return }
+        if maximumDownloadBytes != nil && (transferred == 0 || clock() <= startedAt) {
+            fail(URLError(.zeroByteResource)); return
+        }
         finished = true
         cancelTimeBox?(); cancelTimeBox = nil
 
@@ -218,7 +228,10 @@ extension SpeedTest: URLSessionDataDelegate {
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        if dataTask === task, kind == .download { transferred += Int64(data.count) }
+        if dataTask === task, kind == .download {
+            transferred += Int64(data.count)
+            if let maximumDownloadBytes, transferred >= Int64(maximumDownloadBytes) { finishTransfer(timedOut: true) }
+        }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask,
