@@ -46,8 +46,7 @@ struct TMobileWiFiSettingsView: View {
     let close: () -> Void
     @AppStorage(DefaultsKey.tMobileGatewayAddress) private var address = TMobileGatewayService.defaultBaseURL
     @ObservedObject var service: TMobileWiFiService
-    @State private var username = "admin"
-    @State private var password = ""
+    @StateObject private var credentials = TMobileGatewayCredentialForm()
     @State private var trustedNetwork = false
     @State private var edits: [Int: TMobileWiFiEdit] = [:]
     @State private var editorGeneration = UUID()
@@ -79,12 +78,16 @@ struct TMobileWiFiSettingsView: View {
                 Label(address, systemImage: "network").textSelection(.enabled)
                 Spacer()
                 if service.configuration != nil {
-                    Button("Sign out") { clearDrafts(); service.disconnect() }.disabled(busy)
+                    Button("Forget saved password") { credentials.forget() }.disabled(busy || !credentials.scopeIsValid)
+                    Button("Sign out") { credentials.clearVolatile(); clearDrafts(); service.disconnect() }.disabled(busy)
                 }
             }.font(.callout).foregroundStyle(.secondary)
             if busy { HStack { ProgressView().controlSize(.small); Text(phaseLabel) }.accessibilityElement(children: .combine) }
             if let message = service.message {
                 Text(message).font(.callout).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            }
+            if let message = credentials.message {
+                Text(message).font(.callout).fixedSize(horizontal: false, vertical: true)
             }
             if let interruptedOrigin {
                 Text("The previous gateway (\(interruptedOrigin)) may have received an unconfirmed change. Check that gateway’s settings before sending it another change.")
@@ -139,12 +142,13 @@ struct TMobileWiFiSettingsView: View {
         }
         .padding(22).frame(minWidth: 740, idealWidth: 800, minHeight: 650, idealHeight: 780)
         .interactiveDismissDisabled(writing)
+        .onAppear { credentials.updateAddress(address) }
         .onChange(of: service.configuration) { _, _ in clearDrafts() }
         .onChange(of: address) { previous, _ in
             if writing { interruptedOrigin = previous }
-            password = ""; trustedNetwork = false; clearDrafts(); requestTask?.cancel(); service.disconnect()
+            credentials.updateAddress(address); trustedNetwork = false; clearDrafts(); requestTask?.cancel(); service.disconnect()
         }
-        .onDisappear { requestTask?.cancel(); password = ""; edits.removeAll(); service.disconnect() }
+        .onDisappear { requestTask?.cancel(); credentials.clearVolatile(); edits.removeAll(); service.disconnect() }
         .confirmationDialog(service.review?.isRestore == true ? "Restore the reviewed Wi-Fi settings?" : "Apply the reviewed Wi-Fi changes?", isPresented: $confirmingApply, titleVisibility: .visible) {
             if let review = service.review {
                 Button(review.isRestore ? "Restore settings" : "Apply changes", role: .destructive) {
@@ -167,9 +171,8 @@ struct TMobileWiFiSettingsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Use the gateway admin password from its label. This is separate from your Wi-Fi password and T-Mobile account.")
                     .font(.callout).foregroundStyle(.secondary)
-                TextField("Username", text: $username).textFieldStyle(.roundedBorder)
-                SecureField("Gateway admin password", text: $password).textFieldStyle(.roundedBorder)
-                Text("Sign-in lasts for this window. The admin password and current Wi-Fi passwords are not saved by Shadow Utilities.")
+                TMobileGatewayCredentialFields(form: credentials)
+                Text("Sign-in lasts for this window. Current Wi-Fi passwords are not saved by Shadow Utilities.")
                     .font(.caption).foregroundStyle(.secondary)
                 if usesHTTP {
                     Text("This gateway uses HTTP. Your admin password and Wi-Fi configuration travel without encryption on this local network.")
@@ -177,14 +180,16 @@ struct TMobileWiFiSettingsView: View {
                     Toggle("I’m connected to a trusted private network", isOn: $trustedNetwork)
                 }
                 Button("Sign in & load settings") {
-                    let enteredPassword = password
-                    let enteredUsername = username
-                    password = ""
-                    run { await service.connect(baseURL: address, username: enteredUsername, password: enteredPassword) }
+                    credentials.updateAddress(address)
+                    guard let input = credentials.prepareSignIn() else { return }
+                    run {
+                        await service.connect(baseURL: input.address, username: input.username, password: input.password)
+                        credentials.completeSignIn(input, succeeded: service.phase == .ready)
+                    }
                 }.buttonStyle(.borderedProminent)
-                    .disabled(busy || password.isEmpty || username.isEmpty || (usesHTTP && !trustedNetwork)
+                    .disabled(busy || credentials.password.isEmpty || credentials.username.isEmpty || (usesHTTP && !trustedNetwork)
                               || TMobileGatewaySupport.privateLANBaseURL(address) == nil)
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(6).disabled(busy)
         }
     }
 
@@ -260,7 +265,7 @@ struct TMobileWiFiSettingsView: View {
         requestTask?.cancel()
         requestTask = Task { await operation() }
     }
-    private func finish() { requestTask?.cancel(); password = ""; clearDrafts(); service.disconnect(); close() }
+    private func finish() { requestTask?.cancel(); credentials.clearVolatile(); clearDrafts(); service.disconnect(); close() }
 }
 
 private struct TMobileWiFiNetworkEditor: View {

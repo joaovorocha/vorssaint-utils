@@ -45,8 +45,7 @@ struct TMobileCellTelemetryView: View {
     let close: () -> Void
     @AppStorage(DefaultsKey.tMobileGatewayAddress) private var address = TMobileGatewayService.defaultBaseURL
     @Environment(\.colorScheme) private var colorScheme
-    @State private var username = "admin"
-    @State private var password = ""
+    @StateObject private var credentials = TMobileGatewayCredentialForm()
     @State private var trustedNetwork = false
     @State private var requestTask: Task<Void, Never>?
     @State private var showingAdminSignIn = false
@@ -56,7 +55,8 @@ struct TMobileCellTelemetryView: View {
 
     var body: some View {
         TMobileCoverageWorkspaceView(close: finish) { radioTab }
-        .onChange(of: address) { _, _ in signOut(); trustedNetwork = false }
+        .onAppear { credentials.updateAddress(address) }
+        .onChange(of: address) { _, value in signOut(); trustedNetwork = false; credentials.updateAddress(value) }
         .onDisappear { signOut() }
     }
 
@@ -117,9 +117,13 @@ struct TMobileCellTelemetryView: View {
                 if let date = service.fetchedAt { Text("Read \(date.formatted(date: .omitted, time: .standard))") }
                 Spacer()
                 if service.canRefresh { Button("Refresh readings") { run { await service.refresh() } } }
+                if service.canRefresh {
+                    Button("Forget saved password") { credentials.forget() }.disabled(!credentials.scopeIsValid)
+                }
                 if service.phase != .signedOut { Button(busy ? "Cancel & sign out" : "Sign out") { signOut() } }
             }.font(.callout)
             if let message = service.message { Text(message).font(.callout).fixedSize(horizontal: false, vertical: true) }
+            if let message = credentials.message { Text(message).font(.callout).fixedSize(horizontal: false, vertical: true) }
         }
     }
 
@@ -128,24 +132,24 @@ struct TMobileCellTelemetryView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Use the gateway admin password, separate from the Wi-Fi password and T-Mobile account. This session reads radio details and ends when this window closes.")
                     .font(.callout).foregroundStyle(.secondary)
-                TextField("Username", text: $username).textFieldStyle(.roundedBorder)
-                SecureField("Gateway admin password", text: $password).textFieldStyle(.roundedBorder)
-                Text("Credentials and these advanced readings are not saved. Refresh is manual.")
+                TMobileGatewayCredentialFields(form: credentials)
+                Text("Advanced readings are not saved. Refresh is manual.")
                     .font(.caption).foregroundStyle(.secondary)
                 if usesHTTP {
                     Text("This gateway uses HTTP. Your administrator credentials travel without encryption on the local network.").font(.callout)
                     Toggle("I’m connected to a trusted private network", isOn: $trustedNetwork)
                 }
                 Button("Sign in & read radio details") {
-                    let enteredPassword = password
-                    let enteredUsername = username
-                    let enteredAddress = address
-                    password = ""
-                    run { await service.connect(baseURL: enteredAddress, username: enteredUsername, password: enteredPassword) }
+                    credentials.updateAddress(address)
+                    guard let input = credentials.prepareSignIn() else { return }
+                    run {
+                        await service.connect(baseURL: input.address, username: input.username, password: input.password)
+                        credentials.completeSignIn(input, succeeded: service.phase == .ready)
+                    }
                 }.buttonStyle(.borderedProminent)
-                    .disabled(password.isEmpty || username.isEmpty || (usesHTTP && !trustedNetwork)
+                    .disabled(credentials.password.isEmpty || credentials.username.isEmpty || (usesHTTP && !trustedNetwork)
                               || TMobileGatewaySupport.privateLANBaseURL(address) == nil)
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(6).disabled(busy)
         }
     }
 
@@ -173,6 +177,6 @@ struct TMobileCellTelemetryView: View {
         requestTask?.cancel()
         requestTask = Task { await operation() }
     }
-    private func signOut() { requestTask?.cancel(); requestTask = nil; password = ""; service.disconnect() }
+    private func signOut() { requestTask?.cancel(); requestTask = nil; credentials.clearVolatile(); service.disconnect() }
     private func finish() { signOut(); close() }
 }
