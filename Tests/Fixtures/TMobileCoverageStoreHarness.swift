@@ -59,7 +59,9 @@ import Foundation
         expect(restored.sessions[0].observationCount == 1 && restored.sessions[0].speedTestCount == 1 && restored.sessions[0].gapCount == 1,
                "session summaries reflect replayed records")
         let first = try restored.pendingSyncEnvelope(for: session, limit: 3)
+        let repeated = try restored.pendingSyncEnvelope(for: session, limit: 3)
         let second = try restored.pendingSyncEnvelope(for: session, afterSequence: first.nextSequence!, limit: 3)
+        expect(first == repeated, "same immutable sync window has stable batch identity")
         expect(!first.syncEnabled && !restored.syncEnabled && first.hasMore, "future sync envelope stays disabled")
         expect(first.events.count == 3 && first.events.last!.sequence < second.events.first!.sequence,
                "bounded sync export resumes after durable event sequence")
@@ -90,6 +92,18 @@ import Foundation
         expect(!TMobileCoverageLocationFix(coordinate: coordinate, timestamp: now, horizontalAccuracy: -1, source: .mac).isValid,
                "invalid accuracy is never treated as a good fix")
         expect(!fix.isUsable(at: now.addingTimeInterval(61)), "old fix remains archived but is not usable")
+        invalid = raw
+        invalid.speedTest = test
+        invalid.corrections = [.init(coordinate: .init(latitude: 40.00135, longitude: -100), correctedAt: now)]
+        let shiftedEnd = TMobileCoverageLocationFix(coordinate: .init(latitude: 39.9995, longitude: -100),
+                                                    timestamp: now, horizontalAccuracy: 12, source: .mac)
+        invalid.speedTest = .init(startedAt: now, endedAt: now, startLocation: fix, endLocation: shiftedEnd, downloadMbps: 75)
+        expect(invalid.connectionScore == nil, "manual correction must be near both test endpoints")
+        let broadFix = TMobileCoverageLocationFix(coordinate: coordinate, timestamp: now, horizontalAccuracy: 101, source: .mac)
+        var broadObservation = TMobileCoverageObservation(date: now, snapshot: snapshot, location: broadFix)
+        broadObservation.speedTest = test
+        expect(broadFix.isUsable(at: now) && broadObservation.connectionScore == nil,
+               "complete score applies stricter precision than archival route helper")
         expect(!TMobileCoverageSpeedResult(startedAt: now, endedAt: now, startLocation: fix, endLocation: fix, downloadMbps: .nan).isValid,
                "nonfinite test result rejects")
         let corruptFile = selectedFolder.appendingPathComponent("99999999999999999999-bad.json")
@@ -106,6 +120,22 @@ import Foundation
         expect(failing.beginSession(at: now) == nil && failing.errorMessage != nil && failing.sessions.isEmpty,
                "persist failure surfaces without publishing unsaved session")
         expect(try Data(contentsOf: blocked) == Data("not-a-directory".utf8), "persist failure does not overwrite unrelated file")
+        let concurrentFolder = folder.appendingPathComponent(".concurrent")
+        let writerA = TMobileCoverageStore(folder: concurrentFolder)
+        let concurrentID = writerA.beginSession(at: now)!
+        let concurrentObservationID = writerA.record(snapshot: snapshot, at: now, location: fix)!
+        let writerB = TMobileCoverageStore(folder: concurrentFolder)
+        expect(writerB.correctLocation(observationID: concurrentObservationID, coordinate: corrected, at: now.addingTimeInterval(1)),
+               "second writer can append a legitimate archived correction")
+        expect(writerA.record(snapshot: snapshot, at: now.addingTimeInterval(2), location: fix) == nil && writerA.errorMessage != nil,
+               "stale writer cannot overwrite or duplicate a committed sequence")
+        let concurrentReplay = TMobileCoverageStore(folder: concurrentFolder)
+        expect(concurrentReplay.errorMessage == nil && concurrentReplay.observations.count == 1 && concurrentReplay.observations[0].corrections.count == 1,
+               "concurrent sequence collision leaves a valid complete archive")
+        expect(writerB.deleteSession(concurrentID), "external stopped archive instance can explicitly delete session")
+        expect(writerA.record(snapshot: snapshot, at: now.addingTimeInterval(3), location: fix) == nil
+               && !FileManager.default.fileExists(atPath: concurrentFolder.appendingPathComponent(concurrentID.uuidString).path),
+               "late stale write never recreates a deleted session")
         if failures.isEmpty { print("PASS: \(checks) local coverage archive checks; synthetic data, no live location/router/network access") }
         else { failures.forEach { print("FAIL: \($0)") }; exit(1) }
     }

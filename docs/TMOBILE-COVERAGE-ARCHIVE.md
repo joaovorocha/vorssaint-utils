@@ -26,7 +26,7 @@ A full score needs all three components, a recognized registered radio, a score-
 
 ## Future sync capability
 
-`pendingSyncEnvelope(for:afterSequence:limit:)` is serialization only. It returns up to 500 immutable events with stable event IDs, sequence cursor and schema version. `syncEnabled` is always false. There is no endpoint field, credentials, network client or uploader. A future client-owned tailnet-only connector must acknowledge immutable IDs, resume after confirmed sequences and preserve corrections as revisions. Acknowledgment must never automatically delete this Mac's archive.
+`pendingSyncEnvelope(for:afterSequence:limit:)` is serialization only. It returns up to 500 immutable events with stable event IDs, sequence cursor and schema version. A batch ID is deterministic for the session, cursor, limit and returned event IDs, so retrying the same immutable window retains its identity. `syncEnabled` is always false. There is no endpoint field, credentials, network client or uploader. A future client-owned tailnet-only connector must acknowledge immutable IDs, resume after confirmed sequences and preserve corrections as revisions. Acknowledgment must never automatically delete this Mac's archive.
 
 `exportSession(_:)` creates a local JSON export with original observations, corrections, gaps, attempts and journal lineage. The app should save it to a user-selected local path. Exports contain precise location history and should remain on the local filesystem or a client-owned tailnet service.
 
