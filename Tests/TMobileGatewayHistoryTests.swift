@@ -36,9 +36,13 @@ enum TMobileGatewayHistoryTests {
         suite.expect((attrs?[.posixPermissions] as? NSNumber)?.intValue == 0o600, "history archive is owner readable/writable only")
         let dir = try? FileManager.default.attributesOfItem(atPath: folder.path)
         suite.expect((dir?[.posixPermissions] as? NSNumber)?.intValue == 0o700, "history directory is owner only")
-        store.addTower(.init(name: "Example", latitude: 40, longitude: -100, bands: "n41", cellID: nil))
+        let localPin = TMobileTowerPin(name: "Example", latitude: 40, longitude: -100,
+                                      bands: "n41", cellID: nil, radio: .nr,
+                                      nodeID: 12_345, ecgi: "001-01-12345", provenance: "Synthetic manual pin")
+        store.addTower(localPin)
         let restored = TMobileGatewayHistoryStore(folder: folder, defaults: defaults)
         suite.expect(restored.samples.count == 1 && restored.samples[0].snapshot == snapshot && restored.towers.count == 1 && restored.isRecording, "local history and pins round-trip with explicit recording preference")
+        suite.expect(restored.towers == [localPin], "local identity metadata, provenance and pin UUID survive the version-one history archive")
         store.isRecording = false
         store.record(snapshot: snapshot, at: now.addingTimeInterval(60))
         suite.expect(store.samples.count == 1, "turning recording off prevents another saved sample")
