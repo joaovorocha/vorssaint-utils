@@ -288,26 +288,42 @@ import IOKit
         guard testContext != nil else { return }
         switch phase {
         case .done:
-            let endedAt = Date()
-            validateTest(at: endedAt)
-            guard let context = testContext, let observationID = testObservationID,
-                  let download = speed.downloadMbps else { cancelSpeedTest(); return }
-            let result = TMobileCoverageSpeedResult(startedAt: context.startedAt, endedAt: endedAt,
-                startLocation: context.startLocation, endLocation: freshLocation(at: endedAt),
-                downloadMbps: download, uploadMbps: speed.uploadMbps, latencyMilliseconds: speed.latencyMs,
-                provider: "Cloudflare", scoreEligible: context.invalidationReason == nil,
-                invalidationReason: context.invalidationReason)
-            testContext = nil
-            testObservationID = nil
-            let saved = store.recordSpeedTest(result, for: observationID)
-            if saved { lastCompletedTestObservationID = observationID }
-            status = saved ? (result.scoreEligible ? "Speed test saved · recording continues" : "Speed saved without a Connection Score: \(context.invalidationReason ?? "context changed")")
-                : (store.errorMessage ?? "The speed result could not be saved")
+            saveCompletedDownload(uploadFailed: false, at: Date())
         case .failed:
-            testContext = nil
-            testObservationID = nil
-            status = "Speed test failed · this stop will not be tested again automatically"
+            if speed.downloadMbps != nil {
+                saveCompletedDownload(uploadFailed: true, at: Date())
+            } else {
+                testContext = nil
+                testObservationID = nil
+                status = "Speed test failed · this stop will not be tested again automatically"
+            }
         default: break
+        }
+    }
+
+    private func saveCompletedDownload(uploadFailed: Bool, at endedAt: Date) {
+        validateTest(at: endedAt)
+        if uploadFailed { testContext?.markUploadFailed() }
+        guard let context = testContext, let observationID = testObservationID,
+              let download = speed.downloadMbps, download.isFinite, download >= 0 else {
+            cancelSpeedTest()
+            return
+        }
+        let result = TMobileCoverageSpeedResult(startedAt: context.startedAt, endedAt: endedAt,
+            startLocation: context.startLocation, endLocation: freshLocation(at: endedAt),
+            downloadMbps: download, uploadMbps: uploadFailed ? nil : speed.uploadMbps,
+            latencyMilliseconds: speed.latencyMs, provider: "Cloudflare",
+            scoreEligible: context.invalidationReason == nil,
+            invalidationReason: context.invalidationReason)
+        testContext = nil
+        testObservationID = nil
+        let saved = store.recordSpeedTest(result, for: observationID)
+        if saved { lastCompletedTestObservationID = observationID }
+        if !saved { status = store.errorMessage ?? "The speed result could not be saved" }
+        else if uploadFailed { status = "Download saved; upload test failed · recording continues" }
+        else {
+            status = result.scoreEligible ? "Speed test saved · recording continues"
+                : "Speed saved without a Connection Score: \(context.invalidationReason ?? "context changed")"
         }
     }
 

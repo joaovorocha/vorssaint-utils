@@ -88,6 +88,11 @@ enum TMobileCoverageParkedTests {
         var valid = TMobileCoverageSpeedContext(startedAt: start, startLocation: fix(0), snapshot: snapshot())
         valid.validate(location: fix(10), snapshot: snapshot(rsrp: -100), snapshotDate: start.addingTimeInterval(10), at: start.addingTimeInterval(10))
         suite.expect(valid.invalidationReason == nil, "changing signal measurements retains the same serving-radio speed context")
+        var partial = valid
+        partial.markUploadFailed()
+        suite.expect(partial.invalidationReason != nil, "a completed download with failed upload is retained without a combined score")
+        partial.validate(location: fix(20), snapshot: snapshot(), snapshotDate: start.addingTimeInterval(20), at: start.addingTimeInterval(20))
+        suite.expect(partial.invalidationReason != nil, "later valid context cannot turn an incomplete speed test into a complete score")
         var bandChanged = valid
         bandChanged.validate(location: fix(20), snapshot: snapshot(["n25"]), snapshotDate: start.addingTimeInterval(20), at: start.addingTimeInterval(20))
         suite.expect(bandChanged.invalidationReason != nil, "a band change excludes a speed result from the combined score")

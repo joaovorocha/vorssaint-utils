@@ -175,4 +175,8 @@ struct TMobileCoverageSpeedContext {
             return
         }
     }
+
+    mutating func markUploadFailed() {
+        if invalidationReason == nil { invalidationReason = "Upload test failed; only download completed" }
+    }
 }
