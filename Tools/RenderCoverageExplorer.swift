@@ -30,6 +30,25 @@ import SwiftUI
         NSApp.finishLaunching()
         let output = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        // Optional filters keep a focused UI change from requiring every
+        // unrelated inspector capture. Invalid values fail before rendering.
+        let environment = ProcessInfo.processInfo.environment
+        let variants: [PreviewVariant]
+        if let filter = environment["COVERAGE_PREVIEW_VARIANTS"] {
+            let requested = filter.split(separator: ",").map(String.init)
+            variants = requested.compactMap(PreviewVariant.init(rawValue:))
+            guard !variants.isEmpty, variants.count == requested.count,
+                  Set(variants).count == variants.count else { throw PreviewFailure.invalidFilter }
+        } else { variants = PreviewVariant.allCases }
+        let sizes: [NSSize]
+        if let filter = environment["COVERAGE_PREVIEW_WIDTHS"] {
+            let requested = filter.split(separator: ",").map(String.init)
+            let widths = requested.compactMap(Int.init)
+            guard !widths.isEmpty, widths.count == requested.count,
+                  Set(widths).count == widths.count,
+                  widths.allSatisfy({ [860, 1180].contains($0) }) else { throw PreviewFailure.invalidFilter }
+            sizes = widths.map { NSSize(width: CGFloat($0), height: $0 == 860 ? 700 : 820) }
+        } else { sizes = [NSSize(width: 860, height: 700), NSSize(width: 1180, height: 820)] }
         let fixture = ExplorerFixture()
         guard fixture.observations.allSatisfy(\.isValid), fixture.towers.allSatisfy(\.isValid) else {
             throw PreviewFailure.invalidFixture
@@ -42,9 +61,9 @@ import SwiftUI
         var manifest = ["A capture PASS covers bounds/PNG generation/native map assertions; it does not override an AX UNVERIFIED result.","Synthetic fixtures only; no production app state or account access.",
                         "Production Explorer, map renderer and tower inspector; surrounding chrome is a fixture.",
                         "\(fixture.observations.count) synthetic readings; \(bins.count) actual 50 m bins; \(fixture.towers.count) synthetic references."]
-        for size in [NSSize(width: 860, height: 700), NSSize(width: 1180, height: 820)] {
+        for size in sizes {
             for dark in [false, true] {
-                for variant in PreviewVariant.allCases {
+                for variant in variants {
                     let name = "coverage-explorer-\(variant.rawValue)-\(Int(size.width))x\(Int(size.height))-\(dark ? "dark" : "light").png"
                     let onScreen = variant == .towerNR && size.width == 860 && !dark
                     let result = try render(fixture: fixture, variant: variant, size: size, dark: dark,
@@ -57,7 +76,7 @@ import SwiftUI
         manifest.append("LIMITATION: Native cacheDisplay can omit MapKit GPU-rendered tiles, overlays and annotations. PNG generation and AX traversal do not establish that these pixels were captured; inspect rendered images separately.")
         try (manifest.joined(separator: "\n") + "\n").write(
             to: output.appendingPathComponent("preview-manifest.txt"), atomically: true, encoding: .utf8)
-        print("PASS \(PreviewVariant.allCases.count * 4) production Explorer captures and native map assertions; consult manifest for AX availability; no uncaught AppKit exception")
+        print("PASS \(variants.count * sizes.count * 2) production Explorer captures and native map assertions; consult manifest for AX availability; no uncaught AppKit exception")
     }
 
     private static func render(fixture: ExplorerFixture, variant: PreviewVariant,
@@ -160,14 +179,25 @@ import SwiftUI
             return "UNVERIFIED: native own-process host exposed no AX children; inspector recursion check unavailable"
         }
         guard all.contains("SYNTHETIC PREVIEW") else { throw PreviewFailure.invalidAccessibility }
-        let expected: [String]
+        var expected: [String]
         switch variant {
         case .towerNR, .towerLTE, .community: expected = ["Latitude", "Longitude", "Technology"]
-        case .measurement: expected = ["Signal strength", "Recorded location"]
+        case .measurement, .coverageOnly, .mixedModel, .mismatchedModel:
+            expected = ["Signal strength", "Recorded location"]
         case .empty: expected = ["No saved readings"]
         case .many: expected = []
         }
-        let missing = expected.filter { !all.contains($0) }
+        switch variant {
+        case .coverageOnly, .mismatchedModel:
+            expected += ["Coverage only", "signal unavailable"]
+        case .empty: break
+        default:
+            expected += ["Minimum RSRP", "120", "50", "Weaker", "Stronger"]
+            if variant == .mixedModel { expected += ["Coverage only", "signal unavailable"] }
+        }
+        // The combined accessibility summary uses sentence casing even when
+        // the visible endpoint labels capitalize Weaker and Stronger.
+        let missing = expected.filter { !all.localizedCaseInsensitiveContains($0) }
         guard missing.isEmpty else {
             print("FAIL AX: missing expected labels \(missing.joined(separator: ", "))")
             throw PreviewFailure.invalidAccessibility
@@ -186,7 +216,7 @@ import SwiftUI
         let bins = TMobileCoverageMapDrawing.bins(observations: fixture.observations, metric: .rsrp)
         let towerCount = variant == .many ? fixture.manyTowers.count : fixture.towers.count
         // Explorer hides the reading selection when a tower inspector is open.
-        let readingSelectionCount = variant == .measurement ? 1 : 0
+        let readingSelectionCount = variant.showsReadingInspector ? 1 : 0
         if variant == .empty {
             guard map.overlays.isEmpty, map.annotations.isEmpty else { throw PreviewFailure.invalidNativeMap }
             return "0 native overlays / 0 annotations"
@@ -199,13 +229,15 @@ import SwiftUI
             throw PreviewFailure.invalidNativeMap
         }
         var ready = 0, colorsChecked = 0
+        let overlay = fixture.overlay(for: variant)
+        let signals = overlay.modeledSignalDBm?.count == overlay.polygons.count ? overlay.modeledSignalDBm : nil
         for (index, polygon) in polygons.enumerated() {
             let native = map.renderer(for: polygon)
             if native != nil { ready += 1 }
             let renderer = native ?? map.delegate?.mapView?(map, rendererFor: polygon)
             guard let renderer = renderer as? MKPolygonRenderer,
                   let color = renderer.fillColor?.usingColorSpace(.sRGB),
-                  let expected = TMobileCoverageMapDrawing.referenceColor(modeledSignalDBm: fixture.overlay.modeledSignalDBm?[index]).usingColorSpace(.sRGB),
+                  let expected = TMobileCoverageMapDrawing.referenceColor(modeledSignalDBm: signals?[index]).usingColorSpace(.sRGB),
                   abs(color.redComponent - expected.redComponent) < 0.0001,
                   abs(color.greenComponent - expected.greenComponent) < 0.0001,
                   abs(color.blueComponent - expected.blueComponent) < 0.0001,
@@ -218,11 +250,19 @@ import SwiftUI
         let readyBins = measured.filter { map.renderer(for: $0) != nil }.count
         return "\(polygons.count) model polygons (1 hole), \(measured.count) measured overlays, \(towerCount) tower + \(bins.count + readingSelectionCount) measurement annotations; \(colorsChecked) model colors checked; native renderers ready \(ready)/3 model + \(readyBins)/\(bins.count) measured"
     }
-    private enum PreviewFailure: Error { case invalidFixture, invalidBounds, invalidRender, invalidAccessibility, invalidNativeMap }
+    private enum PreviewFailure: Error { case invalidFixture, invalidFilter, invalidBounds, invalidRender, invalidAccessibility, invalidNativeMap }
 }
 
 private enum PreviewVariant: String, CaseIterable {
     case towerNR = "tower-nr", towerLTE = "tower-lte", community, measurement, empty, many = "many-references"
+    case coverageOnly = "coverage-only", mixedModel = "mixed-model", mismatchedModel = "mismatched-model"
+
+    var showsReadingInspector: Bool {
+        switch self {
+        case .measurement, .coverageOnly, .mixedModel, .mismatchedModel: return true
+        default: return false
+        }
+    }
 }
 
 /// Only the center content is production UI. This bounded fixture recreates the
@@ -247,7 +287,7 @@ private struct ExplorerPreviewChrome: View {
         case .towerLTE: tower = fixture.towers[1].id
         case .community: tower = fixture.towers[2].id
         case .many: tower = fixture.manyTowers.last?.id
-        case .measurement, .empty: tower = nil
+        case .measurement, .empty, .coverageOnly, .mixedModel, .mismatchedModel: tower = nil
         }
         _selectedTowerID = State(initialValue: tower)
     }
@@ -284,7 +324,7 @@ private struct ExplorerPreviewChrome: View {
             TMobileCoverageExplorerView(
                 observations: variant == .empty ? [] : fixture.observations,
                 towers: variant == .empty ? [] : variant == .many ? fixture.manyTowers : fixture.towers,
-                referenceOverlays: variant == .empty ? [] : [fixture.overlay],
+                referenceOverlays: variant == .empty ? [] : [fixture.overlay(for: variant)],
                 metric: $metric, displayMode: $mode,
                 selectedObservationID: $selectedObservationID, selectedTowerID: $selectedTowerID,
                 showsMeasurements: $showsMeasurements, showTowers: $showTowers, showFCC: $showFCC,
@@ -305,6 +345,18 @@ private struct ExplorerFixture {
     let overlay: TMobileCoverageMapReferenceOverlay
     let region = MKCoordinateRegion(center: .init(latitude: 38.581, longitude: -121.4905),
                                     span: .init(latitudeDelta: 0.017, longitudeDelta: 0.026))
+
+    func overlay(for variant: PreviewVariant) -> TMobileCoverageMapReferenceOverlay {
+        let values: [Double?]?
+        switch variant {
+        case .coverageOnly: values = nil // Older local coverage has no signal column.
+        case .mixedModel: values = [-115, nil, -85]
+        case .mismatchedModel: values = [-115, -85] // Renderer treats the whole layer as unknown.
+        default: return overlay
+        }
+        return .init(id: overlay.id, title: overlay.title, provenance: overlay.provenance,
+                     polygons: overlay.polygons, modeledSignalDBm: values)
+    }
     var manyTowers: [TMobileTowerPin] {
         towers + (0..<15).map { index in
             TMobileTowerPin(id: Self.id(50 + index), name: "Synthetic additional reference \(index + 4)",
