@@ -46,7 +46,17 @@ struct TMobileCoverageExplorerView: View {
         })
     }
     private var hasModeledSignal: Bool {
-        referenceOverlays.contains { $0.modeledSignalDBm?.contains(where: { $0 != nil }) == true }
+        referenceOverlays.contains { layer in
+            guard let values = layer.modeledSignalDBm, values.count == layer.polygons.count else { return false }
+            return values.contains { value in value.map { $0.isFinite && (-120 ... -50).contains($0) } == true }
+        }
+    }
+    private var hasUnknownModeledSignal: Bool {
+        referenceOverlays.contains { layer in
+            guard !layer.polygons.isEmpty else { return false }
+            guard let values = layer.modeledSignalDBm, values.count == layer.polygons.count else { return true }
+            return values.contains { value in value.map { !$0.isFinite || !(-120 ... -50).contains($0) } ?? true }
+        }
     }
     private var showsCommunityAttribution: Bool {
         showTowers && towers.contains { $0.provenance?.localizedCaseInsensitiveContains("opencellid") == true }
@@ -57,7 +67,7 @@ struct TMobileCoverageExplorerView: View {
             layers
             GeometryReader { geometry in
                 HStack(alignment: .top, spacing: 16) {
-                    mapColumn(height: geometry.size.height)
+                    mapColumn
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     Divider()
                     ScrollView {
@@ -97,7 +107,7 @@ struct TMobileCoverageExplorerView: View {
         .fixedSize()
     }
 
-    private func mapColumn(height: CGFloat) -> some View {
+    private var mapColumn: some View {
         VStack(alignment: .leading, spacing: 10) {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) {
@@ -107,7 +117,8 @@ struct TMobileCoverageExplorerView: View {
                 }
                 VStack(alignment: .leading, spacing: 8) { metricPicker; displayPicker }
             }
-            TMobileCoverageMapView(observations: observations,
+            GeometryReader { mapGeometry in
+              TMobileCoverageMapView(observations: observations,
                                   towers: showTowers ? towers : [],
                                   referenceOverlays: showFCC ? referenceOverlays : [],
                                   metric: metric, displayMode: displayMode,
@@ -115,10 +126,12 @@ struct TMobileCoverageExplorerView: View {
                                   selectedTowerID: selectedTowerID,
                                   onTowerSelected: { selectedTowerID = $0 },
                                   showsMeasurements: showsMeasurements,
-                                  canvasHeight: max(220, height - (showsCommunityAttribution ? 193 : 171)),
+                                  canvasHeight: max(220, mapGeometry.size.height - 30),
                                   showsExplanations: false,
                                   initialRegion: initialRegion,
                                   onRegionChanged: onRegionChanged)
+            }
+            .frame(minHeight: 250)
             legend
         }
     }
@@ -142,17 +155,40 @@ struct TMobileCoverageExplorerView: View {
 
     private var legend: some View {
         VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 8) {
-                Text("FCC model").fontWeight(.medium)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text("FCC model").font(.callout.weight(.semibold))
+                    if hasModeledSignal { Text("Minimum RSRP").foregroundStyle(.secondary) }
+                    if !showFCC { Text("Hidden").foregroundStyle(.secondary) }
+                }
                 if hasModeledSignal {
-                    LinearGradient(colors: [Color(nsColor: TMobileCoverageMapDrawing.referenceColor(modeledSignalDBm: -120)),
-                                            Color(nsColor: TMobileCoverageMapDrawing.referenceColor(modeledSignalDBm: -50))],
-                                   startPoint: .leading, endPoint: .trailing)
-                        .frame(width: 66, height: 8).clipShape(Capsule())
-                    Text("−120 → −50 dBm RSRP")
-                } else {
-                    RoundedRectangle(cornerRadius: 2).fill(.blue.opacity(0.35)).frame(width: 16, height: 10)
-                    Text(referenceOverlays.isEmpty ? "No coverage loaded" : "Coverage footprint")
+                    VStack(spacing: 5) {
+                        // Opaque legend swatches make the hues readable. Map fills
+                        // retain their existing transparency over the basemap.
+                        LinearGradient(colors: [-120.0, -85.0, -50.0].map {
+                            Color(nsColor: TMobileCoverageMapDrawing.referenceColor(modeledSignalDBm: $0).withAlphaComponent(1))
+                        }, startPoint: .leading, endPoint: .trailing)
+                            .frame(height: 14).clipShape(RoundedRectangle(cornerRadius: 4))
+                            .accessibilityHidden(true)
+                        HStack {
+                            Text("−120 dBm · Weaker")
+                            Spacer(minLength: 12)
+                            Text("−50 dBm · Stronger")
+                        }
+                        .font(.callout).monospacedDigit().foregroundStyle(.primary)
+                    }
+                    .frame(maxWidth: 380, alignment: .leading)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("FCC modeled minimum signal: minus 120 dBm, weaker, to minus 50 dBm, stronger.")
+                }
+                if hasUnknownModeledSignal {
+                    HStack(spacing: 8) {
+                        RoundedRectangle(cornerRadius: 2).fill(.blue.opacity(0.35)).frame(width: 16, height: 10)
+                            .accessibilityHidden(true)
+                        Text("Coverage only · signal unavailable").foregroundStyle(.primary)
+                    }
+                } else if referenceOverlays.isEmpty {
+                    Text("No coverage loaded").foregroundStyle(.secondary)
                 }
             }
             HStack(spacing: 12) {
