@@ -45,7 +45,7 @@ actor TMobileFCCDownloadCache {
             try Task.checkCancellation()
             let identity = try SourceIdentity(file)
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
-            let key = Self.hex(SHA256.hash(data: try encoder.encode(identity)))
+            let key = try Self.key(for: identity)
             let location = try directory ?? Self.defaultDirectory()
             let root = try Directory.open(location, create: true)
             defer { root.close() }
@@ -80,6 +80,36 @@ actor TMobileFCCDownloadCache {
         catch let error as FCCCoverageFailure { throw error }
         catch let error as Failure { throw error }
         catch { throw Failure.cannotSave }
+    }
+
+    /// The structural ZIP/GeoPackage importer can reject a file after the
+    /// transport and local byte checks pass. Forget only that exact source so a
+    /// later explicit load can download it again. Missing cache is a no-op.
+    func invalidate(file: FCCCoverageDataFile) throws {
+        do {
+            try Task.checkCancellation()
+            let identity = try SourceIdentity(file)
+            let key = try Self.key(for: identity)
+            let location = try directory ?? Self.defaultDirectory()
+            let root: Directory
+            do { root = try Directory.open(location, create: false) }
+            catch Directory.OpenFailure.absent { return }
+            defer { root.close() }
+            guard let entry = try? root.child(key) else { return }
+            defer { entry.close() }
+            guard let data = try? entry.read(name: Self.manifestName, limit: Self.maximumManifestBytes),
+                  let manifest = try? JSONDecoder().decode(Manifest.self, from: data),
+                  manifest.version == 1, manifest.source == identity else { return }
+            try root.retire(key, expected: entry)
+        } catch is CancellationError { throw FCCCoverageFailure.cancelled }
+        catch let error as FCCCoverageFailure { throw error }
+        catch let error as Failure { throw error }
+        catch { throw Failure.cannotSave }
+    }
+
+    private static func key(for identity: SourceIdentity) throws -> String {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        return hex(SHA256.hash(data: try encoder.encode(identity)))
     }
 
     private static func defaultDirectory() throws -> URL {
@@ -180,6 +210,7 @@ actor TMobileFCCDownloadCache {
     /// Directory descriptors pin writes and cleanup. Every path component is
     /// opened with NOFOLLOW, so pre-existing directory/file symlinks are rejected.
     private final class Directory {
+        enum OpenFailure: Error { case absent }
         let fd: Int32
         init(_ fd: Int32) { self.fd = fd }
         func close() { Darwin.close(fd) }
@@ -201,6 +232,7 @@ actor TMobileFCCDownloadCache {
                         }
                         next = component.withCString { openat(current, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC) }
                     }
+                    if next < 0, errno == ENOENT, !create { throw OpenFailure.absent }
                     guard next >= 0 else { throw Failure.unsafeDirectory }
                     Darwin.close(current); current = next
                 }
@@ -286,6 +318,30 @@ actor TMobileFCCDownloadCache {
             }
             // Publication has committed; a later fsync error must not remove the
             // published entry. It is still validated before any subsequent reuse.
+            _ = fsync(fd)
+        }
+        func retire(_ name: String, expected: Directory) throws {
+            guard try stillNames(name, directory: expected) else { return }
+            let retired = ".invalidated-\(UUID().uuidString)"
+            let renamed = name.withCString { source in retired.withCString { target in
+                renameatx_np(fd, source, fd, target, UInt32(RENAME_EXCL))
+            } }
+            if renamed != 0 {
+                if errno == ENOENT { return }
+                throw Failure.cannotSave
+            }
+            // Verify the moved inode before deleting. If the pathname was
+            // replaced concurrently, restore it without overwriting a new entry.
+            let moved = try? child(retired)
+            let matches = moved?.same(as: expected) == true
+            moved?.close()
+            guard matches else {
+                _ = retired.withCString { source in name.withCString { target in
+                    renameatx_np(fd, source, fd, target, UInt32(RENAME_EXCL))
+                } }
+                throw Failure.unsafeDirectory
+            }
+            removeChild(retired)
             _ = fsync(fd)
         }
         func removeChild(_ name: String) {

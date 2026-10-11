@@ -36,6 +36,7 @@ struct FCCDownloadCacheHarness {
         let suite = Suite()
         try await lifecycle(suite)
         try await identity(suite)
+        try await invalidation(suite)
         try await integrity(suite)
         try await symlinks(suite)
         try await failures(suite)
@@ -98,6 +99,81 @@ struct FCCDownloadCacheHarness {
         }
         suite.expect(await counter.value == variants.count, "invalid identity never triggers a download")
     }
+    static func invalidation(_ suite: Suite) async throws {
+        let location = try root(); defer { try? manager.removeItem(at: location) }
+        let counter = Counter(); let service = cache(location, counter: counter)
+        let rejected = try await service.obtain(file: source(), credentials: credentials, client: client())
+        let other = try await service.obtain(file: source(id: "98765"), credentials: credentials, client: client())
+        let otherBytes = try Data(contentsOf: other.url)
+        // This fixture has a ZIP prefix but no central directory: it passes the
+        // transport byte gate and represents a later structural import failure.
+        try await service.invalidate(file: source())
+        suite.expect(!manager.fileExists(atPath: rejected.url.path) && names(location).count == 1,
+                     "structural failure invalidates only the exact source entry")
+        suite.expect((try? Data(contentsOf: other.url)) == otherBytes,
+                     "invalidating a source preserves a different valid cache entry")
+        let retried = try await service.obtain(file: source(), credentials: credentials, client: client())
+        let downloads = await counter.value
+        suite.expect(!retried.reused && downloads == 3 && (try? Data(contentsOf: retried.url)) == zip,
+                     "the next explicit load downloads again instead of reusing a structurally rejected ZIP")
+        let otherHit = try await service.obtain(file: source(id: "98765"), credentials: credentials, client: client())
+        suite.expect(otherHit.reused && otherHit.url == other.url, "unrelated valid entry remains reusable after recovery")
+        try await service.invalidate(file: source(id: "11111"))
+        suite.expect(names(location).count == 2, "invalidating an absent exact source leaves all other entries intact")
+        let unopened = location.appendingPathComponent("does-not-exist/cache")
+        try await cache(unopened).invalidate(file: source())
+        suite.expect(!manager.fileExists(atPath: location.appendingPathComponent("does-not-exist").path),
+                     "invalidation never creates a missing cache or its ancestors")
+        await suite.failure(FCCCoverageFailure.invalidInput, {
+            try await service.invalidate(file: source(id: "../../user-file"))
+        }, "invalidation rejects a source that could become a user path")
+
+        let manifest = retried.url.deletingLastPathComponent().appendingPathComponent("source.json")
+        let originalManifest = try Data(contentsOf: manifest)
+        var value = try JSONSerialization.jsonObject(with: originalManifest) as! [String: Any]
+        var identity = value["source"] as! [String: Any]; identity["fileID"] = "98765"; value["source"] = identity
+        try JSONSerialization.data(withJSONObject: value).write(to: manifest)
+        try await service.invalidate(file: source())
+        suite.expect(manager.fileExists(atPath: retried.url.path), "invalidation does not delete an entry with mismatched source metadata")
+        try originalManifest.write(to: manifest)
+        try await service.invalidate(file: source())
+        suite.expect(names(location).count == 1, "exact matching metadata enables safe removal after a mismatch")
+
+        for substitution in ["root", "entry", "manifest", "archive"] {
+            let cacheRoot = try root(); let outside = try root()
+            defer { try? manager.removeItem(at: cacheRoot); try? manager.removeItem(at: outside) }
+            let protected = outside.appendingPathComponent("outside.dat"); try zip.write(to: protected)
+            let instance = cache(cacheRoot)
+            let result = try await instance.obtain(file: source(), credentials: credentials, client: client())
+            switch substitution {
+            case "root":
+                let linkedRoot = cacheRoot.appendingPathComponent("linked-cache")
+                try manager.createSymbolicLink(at: linkedRoot, withDestinationURL: outside)
+                await suite.failure(TMobileFCCDownloadCache.Failure.unsafeDirectory, {
+                    try await cache(linkedRoot).invalidate(file: source())
+                }, "invalidation rejects a symlinked cache root")
+            case "entry":
+                let target = result.url.deletingLastPathComponent()
+                try manager.removeItem(at: target); try manager.createSymbolicLink(at: target, withDestinationURL: outside)
+                try await instance.invalidate(file: source())
+                let attributes = try manager.attributesOfItem(atPath: target.path)
+                suite.expect(attributes[.type] as? FileAttributeType == .typeSymbolicLink,
+                             "invalidation leaves an unverified entry symlink intact")
+            case "manifest":
+                let target = result.url.deletingLastPathComponent().appendingPathComponent("source.json")
+                try manager.removeItem(at: target); try manager.createSymbolicLink(at: target, withDestinationURL: protected)
+                try await instance.invalidate(file: source())
+                suite.expect(manager.fileExists(atPath: result.url.path), "invalidation does not follow a manifest symlink")
+            default:
+                try manager.removeItem(at: result.url); try manager.createSymbolicLink(at: result.url, withDestinationURL: protected)
+                try await instance.invalidate(file: source())
+                suite.expect(names(cacheRoot).isEmpty, "exact source invalidation removes a substituted archive link safely")
+            }
+            suite.expect((try? Data(contentsOf: protected)) == zip && names(outside) == ["outside.dat"],
+                         "invalidation never changes an outside symlink target")
+        }
+    }
+
     static func integrity(_ suite: Suite) async throws {
         for damage in 0..<8 {
             let location = try root(); defer { try? manager.removeItem(at: location) }
