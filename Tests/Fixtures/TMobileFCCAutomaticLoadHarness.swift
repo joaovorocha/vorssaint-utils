@@ -28,6 +28,7 @@ import zlib
         try await capturedRequest(suite, folder, zip)
         try await accessStates(suite, folder, zip)
         try await failures(suite, folder)
+        try await malformedDownloadRecovery(suite, folder, zip)
         try await cancellationAndOwnership(suite, folder, zip)
         bounds(suite)
         print("\(suite.failures == 0 ? "PASS" : "FAIL"): \(suite.checks) FCC automatic-load checks; \(suite.failures) failures; all URLs intercepted; synthetic files and credential mocks only")
@@ -203,6 +204,41 @@ import zlib
             }
             suite.expect(f.store.deletes == 0 && f.store.saves == 0, "\(name) failure never silently deletes or rewrites saved access")
         }
+    }
+
+    @MainActor static func malformedDownloadRecovery(_ suite: Suite, _ folder: URL, _ zip: Data) async throws {
+        let f = try fixture(folder, previous: true)
+        let previous = f.references.layer
+        let referenceFile = f.root.appendingPathComponent("references/fcc-reference.json")
+        let previousBytes = try Data(contentsOf: referenceFile)
+        var loaded = 0
+        // The official client accepts the ZIP prefix, and the cache publishes
+        // its hash. Actual archive extraction then detects structural corruption.
+        FixtureProtocol.reset([.http(200, dates), .http(200, catalogue), .zip(Data([0x50, 0x4b, 0x03, 0x04, 1]))])
+        f.model.loadCoverage(region: region) { loaded += 1 }
+        try await idle(f.model)
+        suite.expect(loaded == 0 && f.references.layer == previous && (try? Data(contentsOf: referenceFile)) == previousBytes,
+                     "structurally malformed download leaves the previous reference bytes intact")
+        let entriesAfterFailure = try FileManager.default.contentsOfDirectory(atPath: f.root.appendingPathComponent("cache").path)
+        suite.expect(entriesAfterFailure.isEmpty, "malformed published ZIP is invalidated after extraction failure")
+
+        FixtureProtocol.reset(replies(zip))
+        f.model.loadCoverage(region: region) { loaded += 1 }
+        try await idle(f.model)
+        suite.expect(FixtureProtocol.requests.count == 3
+            && FixtureProtocol.requests.last?.url.path == "/api/public/map/downloads/downloadFile/availability/12345/2",
+                     "next explicit load downloads fresh bytes rather than reusing the malformed ZIP")
+        suite.expect(loaded == 1 && !f.model.reusedDownload && f.model.loadedDate == date
+            && f.references.layer?.modeledSignalDBm == [-95] && f.references.layer?.source?.origin == .officialAPI,
+                     "explicit retry imports fresh valid GeoPackage and reports success exactly once")
+        suite.expect(f.store.reads == [false] && f.store.saves == 0 && !f.model.needsAccess,
+                     "archive recovery retains saved access without another prompt or credential rewrite")
+
+        FixtureProtocol.reset([.http(200, dates), .http(200, catalogue)])
+        f.model.loadCoverage(region: region) { loaded += 1 }
+        try await idle(f.model)
+        suite.expect(loaded == 2 && f.model.reusedDownload && FixtureProtocol.requests.count == 2,
+                     "fresh valid replacement remains reusable on the following explicit load")
     }
 
     @MainActor static func cancellationAndOwnership(_ suite: Suite, _ folder: URL, _ zip: Data) async throws {
