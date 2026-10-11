@@ -42,6 +42,7 @@ struct TMobileMapCoordinate: Codable, Equatable {
             defer { try? FileManager.default.removeItem(at: folder) }
             credentialLifecycle(suite)
             keychainBoundary(suite)
+            quietSavedAccess(suite)
             try references(suite, folder: folder)
             try modeledSignals(suite, folder: folder)
             try boundedReader(suite, folder: folder)
@@ -66,7 +67,7 @@ struct TMobileMapCoordinate: Codable, Equatable {
                     "explicit save targets exactly one FCC service and canonical account without reading")
         suite.check(json?["username"] == email && json?["token"] == token && Set(json?.keys.map { $0 } ?? []) == ["username", "token"],
                     "saved JSON has exactly the two credential fields consumed by the app and helper")
-        suite.check(form.message?.contains("Check for updates") == true && safe(form.message),
+        suite.check(form.message?.contains("saved in Keychain") == true && safe(form.message),
                     "saving reports local persistence without claiming that FCC validated the token")
         let beforeClear = store.calls
         form.clear()
@@ -124,6 +125,40 @@ struct TMobileMapCoordinate: Codable, Equatable {
         suite.check(form.username.isEmpty && form.token.isEmpty && store.values[scope] == saved
                     && form.message?.contains("Unable to forget") == true && safe(form.message),
                     "failed Forget clears input without claiming successful deletion")
+    }
+
+    @MainActor private static func quietSavedAccess(_ suite: FCCWorkflowSuite) {
+        let access = FCCWorkflowKeychainAccess()
+        let store = KeychainScopedCredentialStore(access: access)
+        let form = TMobileFCCCredentialForm(store: store)
+        access.readData = Data(#"{"username":"fcc-workflow@example.invalid","token":"synthetic-fcc-workflow-token"}"#.utf8)
+        form.prepareSavedAccess()
+        suite.check(access.reads.count == 1 && form.isValid && !form.needsSave, "FCC opening quietly checks saved access before asking for a token")
+        suite.check(exact(access.reads[0]) && access.reads[0][kSecUseAuthenticationUI as String] as? String == kSecUseAuthenticationUIFail as String,
+                    "quiet probe uses only exact scope and disallows Keychain UI")
+        form.prepareSavedAccess()
+        suite.check(access.reads.count == 1, "reappearing in one workspace does not repeat quiet probes")
+        form.token = "synthetic-replacement"
+        suite.check(form.needsSave, "changing saved access requires saving the new input")
+        let typed = TMobileFCCCredentialForm(store: store)
+        typed.username = email; typed.token = token; typed.prepareSavedAccess()
+        suite.check(access.reads.count == 1 && typed.token == token, "preflight never overwrites input already being entered")
+        access.status = errSecInteractionNotAllowed
+        let locked = TMobileFCCCredentialForm(store: store)
+        locked.prepareSavedAccess()
+        suite.check(locked.savedAccessState == .locked && locked.token.isEmpty && access.reads.count == 2,
+                    "locked Keychain is distinct from missing token and does not expose access")
+        access.status = errSecSuccess
+        locked.useSaved()
+        suite.check(locked.isValid && access.reads.last?[kSecUseAuthenticationUI as String] == nil,
+                    "explicit unlock can use normal Keychain approval")
+        access.status = errSecItemNotFound
+        let missing = TMobileFCCCredentialForm(store: store)
+        missing.prepareSavedAccess()
+        suite.check(missing.savedAccessState == .missing && !missing.isValid, "missing item asks for access only after exact probe")
+        form.rejectAccess()
+        suite.check(form.token.isEmpty && form.username == email && form.savedAccessState == .invalid,
+                    "rejected token clears volatile secret and retains email for renewal")
     }
 
     private static func keychainBoundary(_ suite: FCCWorkflowSuite) {
@@ -371,8 +406,9 @@ private final class FCCWorkflowKeychainAccess: ScopedCredentialKeychainAccess {
     var reads: [[String: Any]] = [], adds: [[String: Any]] = [], deletes: [[String: Any]] = []
     var updates: [([String: Any], [String: Any])] = []
     var readData: Data?
+    var status: OSStatus = errSecSuccess
     var calls: Int { reads.count + adds.count + updates.count + deletes.count }
-    func copyMatching(_ query: [String: Any]) -> (OSStatus, Data?) { reads.append(query); return (errSecSuccess, readData) }
+    func copyMatching(_ query: [String: Any]) -> (OSStatus, Data?) { reads.append(query); return (status, readData) }
     func add(_ attributes: [String: Any]) -> OSStatus { adds.append(attributes); return errSecSuccess }
     func update(_ query: [String: Any], attributes: [String: Any]) -> OSStatus { updates.append((query, attributes)); return errSecItemNotFound }
     func delete(_ query: [String: Any]) -> OSStatus { deletes.append(query); return errSecSuccess }

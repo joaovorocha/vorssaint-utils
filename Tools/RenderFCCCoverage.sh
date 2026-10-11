@@ -16,7 +16,7 @@ PY
 /usr/bin/xcrun --sdk macosx swiftc -j 1 -disable-batch-mode -D SHADOW_UTILITIES \
     -target arm64-apple-macosx14.0 -module-cache-path "$task_temp/ModuleCache" \
     "$task_temp/Coordinate.swift" Sources/Vorssaint/Support/ScopedCredentialStore.swift \
-    Sources/Vorssaint/Services/Metrics/{FCCCoverageSupport,FCCCoverageClient,TMobileFCCArchiveSupport,TMobileFCCGeoPackageSupport,TMobileFCCCredentials,TMobileFCCReferenceSource,TMobileCoverageReferenceSupport}.swift \
+    Sources/Vorssaint/Services/Metrics/{FCCCoverageSupport,FCCCoverageClient,TMobileFCCDownloadCache,TMobileFCCCoverageModel,TMobileFCCArchiveSupport,TMobileFCCGeoPackageSupport,TMobileFCCCredentials,TMobileFCCReferenceSource,TMobileCoverageReferenceSupport}.swift \
     Sources/Vorssaint/UI/MenuPanel/TMobileFCCCoverageView.swift Tools/RenderFCCCoverage.swift \
     -lz -lsqlite3 -o "$task_temp/render-fcc"
 "$task_temp/render-fcc" "$@"

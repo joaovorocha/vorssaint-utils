@@ -11,6 +11,7 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
     @ObservedObject private var pins = TMobileGatewayHistoryStore.shared
     @ObservedObject private var references = TMobileCoverageReferenceStore.shared
     @ObservedObject private var gateway = TMobileGatewayMonitor.shared.service
+    @StateObject private var fccFlow = TMobileFCCCoverageModel()
     let close: () -> Void
     let radioDetails: () -> RadioDetails
     @Environment(\.colorScheme) private var colorScheme
@@ -20,7 +21,6 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
     @State private var selectedTowerID: UUID?
     @State private var section = WorkspaceSection.map
     @State private var showsMeasurements = true
-    @State private var expandedFCC = true
     @State private var expandedTowers = false
     @State private var expandedCells = false
     @State private var sessionName = ""
@@ -88,7 +88,7 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
                     showsMeasurements: $showsMeasurements, showTowers: $showTowers, showFCC: $showFCC,
                     initialRegion: lookupRegion,
                     onRegionChanged: { lookupRegion = $0 },
-                    onLoadCoverage: { section = .data; expandedFCC = true },
+                    onLoadCoverage: { section = .data },
                     onFindCells: { section = .data; expandedCells = true },
                     onManageTowers: { section = .data; expandedTowers = true },
                     onReadingDetails: { section = .readings })
@@ -108,10 +108,9 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
             case .data:
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
-                        Text("Recording & data sources").font(.title3.bold())
-                        status
+                        fccControls
                         Divider()
-                        DisclosureGroup("FCC coverage", isExpanded: $expandedFCC) { fccControls.padding(.top, 10) }
+                        DisclosureGroup("Recording settings") { status.padding(.top, 10) }
                         DisclosureGroup("Tower references", isExpanded: $expandedTowers) { referenceControls.padding(.top, 10) }
                         DisclosureGroup("OpenCelliD cell lookup", isExpanded: $expandedCells) {
                             TMobileOpenCellIDView(region: lookupRegion, onAreaResults: showOpenCellIDResults,
@@ -137,7 +136,7 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
             }.font(.caption).foregroundStyle(.secondary).padding(12)
         }
         .frame(minWidth: 860, minHeight: 700)
-        .onDisappear { lookupCells = []; lookupRegion = nil }
+        .onDisappear { fccFlow.close(); lookupCells = []; lookupRegion = nil }
         .onChange(of: store.selectedSessionID) { _, _ in
             selectedID = nil; selectedTowerID = nil; lookupRegion = nil; latitude = ""; longitude = ""
         }
@@ -193,6 +192,22 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
                 }
                 Text("\(observations.count) readings").foregroundStyle(.secondary)
             }.font(.caption)
+            if section != .data, let phase = fccFlow.phase {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text(phase.rawValue)
+                    Spacer()
+                    Button("Cancel FCC load") { fccFlow.cancel() }
+                }.font(.caption)
+            } else if section != .data, let message = fccFlow.message {
+                HStack(alignment: .top, spacing: 10) {
+                    Text(message).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button("Details") { section = .data }
+                    Button { fccFlow.dismissMessage() } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.plain).accessibilityLabel("Dismiss FCC status")
+                }.font(.caption)
+            }
             if let error = store.errorMessage ?? references.errorMessage ?? pins.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
@@ -354,15 +369,16 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
 
     private var fccControls: some View {
         VStack(alignment: .leading, spacing: 12) {
-            TMobileFCCCoverageView(region: lookupRegion)
-            if references.layer != nil {
-                Button("Show coverage on map") { section = .map; showFCC = true }
-            }
-            HStack {
+            TMobileFCCCoverageView(region: lookupRegion, model: fccFlow,
+                onChooseArea: { section = .map },
+                onLoaded: { section = .map; showFCC = true })
+            DisclosureGroup("About coverage sources") {
+              HStack {
                 Link("FCC coverage map", destination: URL(string: "https://broadbandmap.fcc.gov/")!)
                 Link("FCC reference map", destination: URL(string: "https://fcc.maps.arcgis.com/apps/webappviewer/index.html?id=6c1b2e73d9d749cdb7bc88a0d1bdd25b")!)
                 Link("AntennaSearch", destination: URL(string: "https://www.antennasearch.com/")!)
-            }.font(.caption)
+              }.font(.caption).padding(.top, 6)
+            }
         }
     }
 

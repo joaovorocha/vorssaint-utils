@@ -4,109 +4,162 @@ import MapKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Nationwide catalogue access is explicit. Map bounds are used only on this Mac.
+/// One primary task, with account/category/file details disclosed as needed.
 @MainActor struct TMobileFCCCoverageView: View {
     let region: MKCoordinateRegion?
-    @ObservedObject var references: TMobileCoverageReferenceStore = .shared
-    @StateObject private var credentials = TMobileFCCCredentialForm()
-    @State private var client = FCCCoverageClient()
-    @State private var stateFIPS = FCCCoverageState.california.fips
-    @State private var technology = FCCCoverageTechnology.nr
-    @State private var speedTier = FCCCoverageSpeedTier.thirtyFiveThree
-    @State private var environment = 2
-    @State private var catalogue: FCCCoverageCatalogue?
-    @State private var datasetDate = ""
-    @State private var showAPIAccess = true
+    var onChooseArea: () -> Void = {}
+    var onLoaded: () -> Void = {}
+    @ObservedObject var model: TMobileFCCCoverageModel
+    @ObservedObject private var credentials: TMobileFCCCredentialForm
+    @ObservedObject private var references: TMobileCoverageReferenceStore
+    @State private var showAccount = false
+    @State private var showOptions = false
+    @State private var showImport = false
     @State private var importFile = false
-    @State private var downloadedURL: URL?
-    @State private var task: Task<Void, Never>?
-    @State private var phase: String?
-    @State private var message: String?
+    @State private var replaceAccess = false
 
-    private var busy: Bool { phase != nil }
-    private var selectedFile: FCCCoverageDataFile? {
-        catalogue?.files.first {
-            $0.geometry == .raw && $0.technology == technology
-                && (technology == .lte || $0.speedTier == speedTier)
-        }
-    }
-    private var bounds: TMobileFCCGeoPackageSupport.Bounds? {
-        guard let region else { return nil }
-        let halfLatitude = region.span.latitudeDelta / 2
-        let halfLongitude = region.span.longitudeDelta / 2
-        let west = region.center.longitude - halfLongitude, east = region.center.longitude + halfLongitude
-        let south = region.center.latitude - halfLatitude, north = region.center.latitude + halfLatitude
-        guard [west, east, south, north].allSatisfy(\.isFinite), west >= -180, east <= 180,
-              south >= -90, north <= 90, west < east, south < north else { return nil }
-        return .init(west: west, south: south, east: east, north: north)
+    init(region: MKCoordinateRegion?, references: TMobileCoverageReferenceStore? = nil,
+         model: TMobileFCCCoverageModel? = nil,
+         onChooseArea: @escaping () -> Void = {}, onLoaded: @escaping () -> Void = {}) {
+        let flow = model ?? TMobileFCCCoverageModel(references: references)
+        self.region = region; self.model = flow; self.credentials = flow.credentials
+        self.references = flow.references; self.onChooseArea = onChooseArea; self.onLoaded = onLoaded
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("FCC modeled coverage", systemImage: "map").font(.headline)
-            Text("Compare T-Mobile’s published coverage with your recorded readings. FCC models describe outdoor or in-vehicle availability; they do not identify towers, radio bands or indoor coverage.")
-                .font(.callout).foregroundStyle(.secondary)
-            selectors.disabled(busy)
-            DisclosureGroup("FCC API access", isExpanded: $showAPIAccess) { credentialControls.padding(.top, 8) }
-            if bounds == nil {
-                Text("Zoom the map to a local area before loading coverage. Areas crossing the date line need a closer view.")
-                    .font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("FCC modeled coverage", systemImage: "map").font(.headline)
+                Text("Compare T-Mobile’s published coverage with your readings.")
+                    .font(.callout).foregroundStyle(.secondary)
             }
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) { catalogueActions }
-                VStack(alignment: .leading, spacing: 10) { catalogueActions }
-            }
-            if let catalogue {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("\(catalogue.state.name) · data as of \(catalogue.asOfDate)").font(.headline)
-                    Text("Checked \(catalogue.checkedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
-                    if let source = references.layer?.source, source.stateFIPS == catalogue.state.fips {
-                        Text(source.availabilityAsOf < catalogue.asOfDate ? "A newer FCC dataset is available for this state." : (source.availabilityAsOf == catalogue.asOfDate ? "The imported availability date matches the latest date returned by FCC." : "The imported date is newer than FCC’s latest date. Verify the date entered for this file."))
-                            .font(.callout)
+            VStack(alignment: .leading, spacing: 12) {
+                Text(model.summary).font(.callout.weight(.semibold))
+                Label(region == nil ? "Choose an area on the map" : "Area: current map view", systemImage: "viewfinder")
+                    .font(.callout).foregroundStyle(.secondary)
+                if let phase = model.phase {
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text(phase.rawValue).font(.callout)
+                        Spacer(minLength: 8)
+                        Button("Cancel") { model.cancel() }
                     }
-                    if selectedFile == nil {
-                        Text("FCC returned no matching T-Mobile raw coverage file for this state and category. Try another category or use the official download page.")
-                            .font(.callout).foregroundStyle(.secondary)
-                    } else {
-                        Text("Download the state file, then load model polygons intersecting the selected map area. Zoom in first; detailed areas may need a closer view.")
-                            .font(.caption).foregroundStyle(.secondary)
+                    Text("You can view the map while this finishes.").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 12) { loadActions }
+                        VStack(alignment: .leading, spacing: 10) { loadActions }
                     }
+                    Text("Finds the latest FCC data and reuses a verified download when available. No file picker needed.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let message = model.message {
+                    Text(message).font(.callout).textSelection(.enabled)
+                }
+                if let layer = references.layer {
+                    Label("Loaded · data as of \(layer.publishedDate)", systemImage: "checkmark.circle")
+                        .font(.callout).foregroundStyle(.secondary)
                 }
             }
-            if let phase {
-                HStack(spacing: 10) {
-                    ProgressView().controlSize(.small)
-                    Text(phase).font(.callout)
-                    Button("Cancel") { task?.cancel() }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+
+            DisclosureGroup(isExpanded: $showAccount) {
+                accountControls.padding(.top, 10)
+            } label: {
+                HStack(spacing: 8) {
+                    Text("FCC access")
+                    Text(accessSummary).font(.caption).foregroundStyle(.secondary)
                 }
             }
-            if let message { Text(message).font(.callout).textSelection(.enabled) }
-            if let url = downloadedURL {
-                Button("Load saved ZIP for map area") { begin { try await load(url, asOfDate: datasetDate, apiFile: nil) } }
-                    .disabled(busy || !TMobileCoverageReferenceSupport.validDate(datasetDate) || bounds == nil)
-                Text("The ZIP remains at your chosen destination. Reloads use local-file provenance because saved files can change. Verify the entered date if you replace the file.")
-                    .font(.caption).foregroundStyle(.secondary)
+            DisclosureGroup("Coverage options", isExpanded: $showOptions) {
+                selectors.padding(.top, 10)
             }
-            Divider()
-            localImportControls
-            if let layer = references.layer {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(layer.title).font(.callout.bold())
-                    Text("\(layer.polygons.count) polygons · \(layer.provenance)").font(.caption).foregroundStyle(.secondary)
-                    Button("Remove reference") { references.removeLayer() }.disabled(busy)
-                }.textSelection(.enabled)
+            DisclosureGroup("Import a local file", isExpanded: $showImport) {
+                localImportControls.padding(.top, 10)
             }
-            Text("Checks send your FCC email and token to FCC over HTTPS; downloads request the selected state’s file. Your precise map area, recordings and gateway credentials stay on this Mac. Each person uses their own FCC token; checks run only when requested.")
+            Text("FCC models describe outdoor and in-vehicle service. They do not identify towers, radio bands or indoor coverage.")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("Your FCC access goes only to FCC over HTTPS. Map coordinates and recordings stay on this Mac. Downloads start when you select Load coverage.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .fixedSize(horizontal: false, vertical: true)
         .fileImporter(isPresented: $importFile, allowedContentTypes: [.zip, .json, UTType(filenameExtension: "gpkg") ?? .data, UTType(filenameExtension: "geojson") ?? .json]) { result in
-            if case .success(let url) = result { begin { try await load(url, asOfDate: datasetDate, apiFile: nil) } }
+            if case .success(let url) = result { model.importLocal(url, region: region, onLoaded: onLoaded) }
         }
-        .onChange(of: stateFIPS) { _, _ in catalogue = nil; message = nil }
-        .onDisappear { task?.cancel(); credentials.clear() }
+        .onAppear {
+            model.prepare()
+            if model.needsAccess || !credentials.isValid { showAccount = true }
+        }
+        .onChange(of: model.needsAccess) { _, needed in if needed { showAccount = true } }
     }
 
+    @ViewBuilder private var loadActions: some View {
+        if TMobileFCCCoverageModel.bounds(for: region) == nil {
+            Button("Choose area on map", action: onChooseArea).buttonStyle(.borderedProminent)
+        } else {
+            Button("Load coverage for this area") {
+                model.loadCoverage(region: region, onLoaded: onLoaded)
+                if model.needsAccess { showAccount = true }
+            }.buttonStyle(.borderedProminent)
+            Button("Choose another area", action: onChooseArea)
+        }
+        if references.layer != nil { Button("Show on map", action: onLoaded) }
+    }
+
+    private var accessSummary: String {
+        if credentials.isValid { return credentials.needsSave ? "Ready to save" : "Saved in Keychain" }
+        switch credentials.savedAccessState {
+        case .locked: return "Unlock Keychain to continue"
+        case .invalid: return "Update token"
+        case .unchecked: return "Checking Keychain…"
+        case .missing, .available: return "Token needed once"
+        }
+    }
+    private var accountControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if credentials.savedAccessState == .locked {
+                Button("Unlock saved access") { credentials.useSaved() }
+                Text("Keychain may ask you to allow this app to use its saved FCC access.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if !replaceAccess {
+                    Button("Use another token…") { replaceAccess = true }
+                }
+            }
+            if credentials.savedAccessState != .locked || replaceAccess {
+                Text("Enter your FCC account email and API token once. Loading coverage saves them in this Mac’s Keychain.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 10) {
+                    GridRow {
+                        Text("FCC email")
+                        TextField("", text: $credentials.username, prompt: Text(verbatim: "name@example.com"))
+                            .textFieldStyle(.roundedBorder).accessibilityLabel("FCC email")
+                    }
+                    GridRow {
+                        Text("API token")
+                        SecureField("Paste FCC token", text: $credentials.token)
+                            .textFieldStyle(.roundedBorder).accessibilityLabel("FCC API token")
+                    }
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { accountActions }
+                    VStack(alignment: .leading, spacing: 10) { accountActions }
+                }
+                Link("Get or renew an FCC API token", destination: FCCCoverageSupport.tokenPage).font(.caption)
+            }
+            if let message = credentials.message { Text(message).font(.caption).foregroundStyle(.secondary) }
+        }.disabled(model.busy)
+    }
+    @ViewBuilder private var accountActions: some View {
+        if credentials.needsSave { Button("Save access") { credentials.save() }.disabled(!credentials.isValid) }
+        if credentials.savedAccessState != .locked {
+            Button("Check Keychain again") { credentials.useSaved() }
+        }
+        if credentials.savedAccessState != .missing {
+            Button("Forget saved access") { credentials.forget() }
+        }
+    }
     private var selectors: some View {
         VStack(alignment: .leading, spacing: 10) {
             ViewThatFits(in: .horizontal) {
@@ -117,197 +170,51 @@ import UniformTypeIdentifiers
                 HStack(spacing: 16) { tierAndEnvironment }
                 VStack(alignment: .leading, spacing: 10) { tierAndEnvironment }
             }
-        }
+            Text("Applies to the next load. Your current map stays available until the new area is ready.")
+                .font(.caption).foregroundStyle(.secondary)
+        }.disabled(model.busy)
     }
-
-    @ViewBuilder private var tierAndEnvironment: some View {
-        if technology == .nr {
-            Picker("Modeled speed", selection: $speedTier) {
-                ForEach(FCCCoverageSpeedTier.allCases) { Text($0.title).tag($0) }
-            }.frame(maxWidth: 250)
-        }
-        Picker("Environment", selection: $environment) {
-            Text("Outdoor stationary").tag(2)
-            Text("In vehicle").tag(1)
-        }.frame(maxWidth: 300)
-    }
-
     @ViewBuilder private var stateAndRadio: some View {
-        Picker("State or territory", selection: $stateFIPS) {
+        Picker("State or territory", selection: $model.stateFIPS) {
             ForEach(FCCCoverageState.all) { Text($0.name).tag($0.fips) }
         }.frame(maxWidth: 330)
-        Picker("Technology", selection: $technology) {
+        Picker("Technology", selection: $model.technology) {
             ForEach(FCCCoverageTechnology.allCases) { Text($0.title).tag($0) }
         }.frame(maxWidth: 210)
     }
-
-    private var credentialControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Sign in on the FCC website, open Manage API Access, and generate a token. Enter the account email and token here.")
-                .font(.caption).foregroundStyle(.secondary)
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 10) {
-                GridRow {
-                    Text("FCC email")
-                    TextField("", text: $credentials.username, prompt: Text(verbatim: "name@example.com"))
-                        .textFieldStyle(.roundedBorder).accessibilityLabel("FCC email")
-                }
-                GridRow {
-                    Text("API token")
-                    SecureField("Paste FCC token", text: $credentials.token)
-                        .textFieldStyle(.roundedBorder).accessibilityLabel("FCC API token")
-                }
-            }
-            ViewThatFits(in: .horizontal) {
-                HStack { credentialActions }
-                VStack(alignment: .leading, spacing: 8) { credentialActions }
-            }
-            if let message = credentials.message { Text(message).font(.caption).foregroundStyle(.secondary) }
-            HStack {
-                Link("Manage FCC API access", destination: FCCCoverageSupport.tokenPage)
-                Link("FCC API instructions", destination: FCCCoverageSupport.specification)
-            }.font(.caption)
-        }.disabled(busy)
+    @ViewBuilder private var tierAndEnvironment: some View {
+        if model.technology == .nr {
+            Picker("Modeled speed", selection: $model.speedTier) {
+                ForEach(FCCCoverageSpeedTier.allCases) { Text($0.title).tag($0) }
+            }.frame(maxWidth: 250)
+        }
+        Picker("Environment", selection: $model.environment) {
+            Text("Outdoors").tag(2); Text("In vehicle").tag(1)
+        }.frame(maxWidth: 300)
     }
-
-    @ViewBuilder private var credentialActions: some View {
-        Button("Save access on this Mac") { credentials.save() }.disabled(!credentials.isValid)
-        Button("Use saved access") { credentials.useSaved() }
-        Button("Forget saved access") { credentials.forget() }
-    }
-
-    @ViewBuilder private var catalogueActions: some View {
-        Button("Check for updates") {
-            let access = FCCCoverageCredentials(username: credentials.username, token: credentials.token)
-            let state = stateFIPS
-            begin {
-                phase = "Checking FCC datasets…"
-                let result = try await client.checkLatestMobileCoverage(stateFIPS: state, credentials: access)
-                try Task.checkCancellation()
-                catalogue = result
-                datasetDate = result.asOfDate
-            }
-        }.disabled(busy || !credentials.isValid)
-        Button("Download & load map area…") { download() }
-            .disabled(busy || selectedFile == nil || !credentials.isValid || bounds == nil)
-        Link("Open FCC downloads", destination: FCCCoverageSupport.downloadPage)
-    }
-
     private var localImportControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Already downloaded a file?").font(.callout.bold())
-            Text("Choose Raw Coverage → GeoPackage on the FCC download page. Enter the Availability Data As Of date, zoom the map to your area, then import the ZIP or GeoPackage. A new reference replaces the previous overlay.")
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Use an FCC Raw Coverage ZIP or GeoPackage you already have. Enter its Availability Data As Of date.")
                 .font(.caption).foregroundStyle(.secondary)
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) { localActions }
-                VStack(alignment: .leading, spacing: 10) { localActions }
+                HStack(spacing: 12) { importActions }
+                VStack(alignment: .leading, spacing: 10) { importActions }
             }
-            Text("Local files are checked for compatible contents; their FCC origin and manually entered date remain declared by you. Polygon/MultiPolygon GeoJSON is imported in full, within the geometry limit.")
+            if let layer = references.layer {
+                Text(layer.title).font(.caption).textSelection(.enabled)
+                Button("Remove coverage reference") { references.removeLayer() }.disabled(model.busy)
+            }
+            Link("Open FCC downloads", destination: FCCCoverageSupport.downloadPage).font(.caption)
+            Text("Local-file origin and date are declared by you. A successful import replaces the existing coverage overlay.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
-
-    @ViewBuilder private var localActions: some View {
+    @ViewBuilder private var importActions: some View {
         HStack {
             Text("Data as of").fixedSize()
-            TextField("YYYY-MM-DD", text: $datasetDate).textFieldStyle(.roundedBorder).frame(width: 140).disabled(busy)
+            TextField("YYYY-MM-DD", text: $model.datasetDate).textFieldStyle(.roundedBorder).frame(width: 140)
         }
-        Button("Import local coverage file…") { importFile = true }
-            .disabled(busy || !TMobileCoverageReferenceSupport.validDate(datasetDate))
-    }
-
-    private func begin(_ operation: @escaping @MainActor () async throws -> Void) {
-        guard !busy else { return }
-        phase = "Reading FCC coverage…"; message = nil
-        task = Task {
-            do { try await operation() }
-            catch is CancellationError { message = "FCC operation cancelled. The existing reference is retained." }
-            catch { message = (error as? LocalizedError)?.errorDescription ?? "Unable to load FCC data. Try the official download page." }
-            phase = nil; task = nil
-        }
-    }
-
-    private func download() {
-        guard let file = selectedFile else { return }
-        let panel = NSSavePanel(); panel.allowedContentTypes = [.zip]
-        panel.nameFieldStringValue = file.fileName.hasSuffix(".zip") ? file.fileName : file.fileName + ".zip"
-        guard panel.runModal() == .OK, let destination = panel.url else { return }
-        let access = FCCCoverageCredentials(username: credentials.username, token: credentials.token)
-        begin {
-            phase = "Downloading FCC state coverage…"
-            let scoped = destination.startAccessingSecurityScopedResource()
-            defer { if scoped { destination.stopAccessingSecurityScopedResource() } }
-            let url = try await client.downloadGeoPackage(file: file, to: destination, credentials: access)
-            downloadedURL = url
-            phase = "Loading model polygons for this map area…"
-            try await load(url, asOfDate: file.asOfDate, apiFile: file)
-        }
-    }
-
-    private func load(_ url: URL, asOfDate: String, apiFile: FCCCoverageDataFile?) async throws {
-        guard TMobileCoverageReferenceSupport.validDate(asOfDate) else { throw ImportFailure.chooseArea }
-        let mapBounds = bounds
-        let radio = apiFile?.technology ?? technology
-        let tier = apiFile?.speedTier ?? (radio == .nr ? speedTier : nil)
-        let environment = environment
-        let worker = Task.detached(priority: .userInitiated) { () throws -> (Data, TMobileFCCGeoPackageSupport.Selection?) in
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            try Task.checkCancellation()
-            if ["json", "geojson"].contains(url.pathExtension.lowercased()) {
-                return (try TMobileCoverageReferenceSupport.readLocalFile(at: url), nil)
-            }
-            guard let bounds = mapBounds else { throw ImportFailure.chooseArea }
-            let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("shadow-fcc-\(UUID().uuidString)", isDirectory: true)
-            try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-            defer { try? FileManager.default.removeItem(at: temporary) }
-            let package: URL
-            if url.pathExtension.lowercased() == "zip" {
-                package = try TMobileFCCArchiveSupport.extractGeoPackage(from: url, to: temporary)
-            } else if url.pathExtension.lowercased() == "gpkg" { package = url }
-            else { throw ImportFailure.fileType }
-            let inspection = try TMobileFCCGeoPackageSupport.inspect(url: package)
-            let categories = inspection.categories.filter { category in
-                let value = category.selection
-                return value.providerID == 130403 && value.technology == Int(radio.rawValue)
-                    && (tier == nil || (value.minimumDownloadMbps == (tier == .thirtyFiveThree ? 35 : 7)
-                        && value.minimumUploadMbps == (tier == .thirtyFiveThree ? 3 : 1)))
-                    && (environment == 2 || value.environment == environment)
-            }
-            guard let first = categories.first?.selection,
-                  Set(categories.map { $0.selection.layerName }).count == 1,
-                  categories.allSatisfy({ $0.selection.minimumDownloadMbps == first.minimumDownloadMbps
-                      && $0.selection.minimumUploadMbps == first.minimumUploadMbps }) else { throw ImportFailure.category }
-            let selection = TMobileFCCGeoPackageSupport.Selection(layerName: first.layerName, providerID: first.providerID,
-                technology: first.technology, minimumDownloadMbps: first.minimumDownloadMbps,
-                minimumUploadMbps: first.minimumUploadMbps, environment: environment)
-            let result = try TMobileFCCGeoPackageSupport.extract(url: package, bounds: bounds, selection: selection)
-            return (result.geoJSON, selection)
-        }
-        let result = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
-        try Task.checkCancellation()
-        let source = result.1.map { selection in
-            TMobileFCCReferenceSource(origin: apiFile == nil ? .localFile : .officialAPI,
-                availabilityAsOf: asOfDate, stateFIPS: apiFile?.stateFIPS, technology: selection.technology,
-                minimumDownloadMbps: selection.minimumDownloadMbps, minimumUploadMbps: selection.minimumUploadMbps,
-                environment: selection.environment, fileID: apiFile?.id)
-        }
-        guard references.importLayer(data: result.0, publishedDate: asOfDate, source: source) else {
-            throw ImportFailure.save
-        }
-        message = result.1 == nil
-            ? "The complete GeoJSON reference is loaded on this Mac. Your recorded readings are retained."
-            : "FCC reference loaded on this Mac. It shows complete model polygons intersecting the selected map area; your recorded readings are retained."
-    }
-
-    private enum ImportFailure: LocalizedError {
-        case chooseArea, fileType, category, save
-        var errorDescription: String? {
-            switch self {
-            case .chooseArea: return "Enter the dataset date and zoom the map to the local area you want to compare."
-            case .fileType: return "Choose an FCC raw coverage ZIP, GeoPackage or Polygon/MultiPolygon GeoJSON file."
-            case .category: return "This file has no unique matching T-Mobile category. Select its technology, speed and environment, then try again."
-            case .save: return "Unable to save this coverage reference. The previous overlay is retained."
-            }
-        }
+        Button("Choose coverage file…") { importFile = true }
+            .disabled(model.busy || !TMobileCoverageReferenceSupport.validDate(model.datasetDate))
     }
 }

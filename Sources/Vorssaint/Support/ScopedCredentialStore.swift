@@ -16,13 +16,21 @@ struct ScopedCredentialScope: Hashable, CustomStringConvertible, CustomDebugStri
 }
 
 enum ScopedCredentialStoreError: Error {
-    case invalidScope, invalidSecret, invalidSavedValue, unavailable
+    case invalidScope, invalidSecret, invalidSavedValue, unavailable, interactionRequired
 }
 
 protocol ScopedCredentialStore {
     func read(scope: ScopedCredentialScope) throws -> String?
+    func read(scope: ScopedCredentialScope, allowingUserInteraction: Bool) throws -> String?
     func save(_ secret: String, scope: ScopedCredentialScope) throws
     func delete(scope: ScopedCredentialScope) throws
+}
+
+extension ScopedCredentialStore {
+    /// Stores without a quiet-read implementation cannot trigger UI implicitly.
+    func read(scope: ScopedCredentialScope, allowingUserInteraction: Bool) throws -> String? {
+        allowingUserInteraction ? try read(scope: scope) : nil
+    }
 }
 
 /// Injectable Security boundary lets regression tests inspect every query
@@ -36,6 +44,17 @@ protocol ScopedCredentialKeychainAccess {
 
 private struct SystemScopedCredentialKeychainAccess: ScopedCredentialKeychainAccess {
     func copyMatching(_ query: [String: Any]) -> (OSStatus, Data?) {
+        // AuthenticationUIFail covers Data Protection items. Legacy local
+        // Keychain items also need this process-local guard, restored on return.
+        let quiet = query[kSecUseAuthenticationUI as String] as? String == kSecUseAuthenticationUIFail as String
+        var previous = DarwinBoolean(true)
+        if quiet {
+            guard SecKeychainGetUserInteractionAllowed(&previous) == errSecSuccess,
+                  SecKeychainSetUserInteractionAllowed(false) == errSecSuccess else {
+                return (errSecInteractionNotAllowed, nil)
+            }
+        }
+        defer { if quiet { _ = SecKeychainSetUserInteractionAllowed(previous.boolValue) } }
         var value: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &value)
         return (status, value as? Data)
@@ -67,11 +86,19 @@ final class KeychainScopedCredentialStore: ScopedCredentialStore {
     }
 
     func read(scope: ScopedCredentialScope) throws -> String? {
+        try read(scope: scope, allowingUserInteraction: true)
+    }
+
+    func read(scope: ScopedCredentialScope, allowingUserInteraction: Bool) throws -> String? {
         var request = try query(scope)
         request[kSecReturnData as String] = true
         request[kSecMatchLimit as String] = kSecMatchLimitOne
+        if !allowingUserInteraction { request[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail }
         let (status, data) = access.copyMatching(request)
         if status == errSecItemNotFound { return nil }
+        if !allowingUserInteraction && [errSecInteractionNotAllowed, errSecAuthFailed].contains(status) {
+            throw ScopedCredentialStoreError.interactionRequired
+        }
         guard status == errSecSuccess else { throw ScopedCredentialStoreError.unavailable }
         guard let data, !data.isEmpty, data.count <= maximumSecretBytes,
               let value = String(data: data, encoding: .utf8) else {

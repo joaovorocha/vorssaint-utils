@@ -21,8 +21,10 @@ import SwiftUI
         let store = TMobileCoverageReferenceStore(folder: temporary.appendingPathComponent("reference"))
         let region = MKCoordinateRegion(center: .init(latitude: 38.58, longitude: -121.49),
                                         span: .init(latitudeDelta: 0.02, longitudeDelta: 0.02))
-        for width: CGFloat in [480, 900] {
-            for dark in [false, true] { try render(store: store, region: region, width: width, dark: dark, name: "empty", output: output) }
+        for name in ["ready", "token-needed", "locked", "choose-area"] {
+            for width: CGFloat in [480, 900] {
+                for dark in [false, true] { try render(store: store, region: region, width: width, dark: dark, name: name, output: output) }
+            }
         }
         if CommandLine.arguments.count == 3 {
             let package = try TMobileFCCArchiveSupport.extractGeoPackage(
@@ -51,7 +53,14 @@ import SwiftUI
 
     private static func render(store: TMobileCoverageReferenceStore, region: MKCoordinateRegion,
                                width: CGFloat, dark: Bool, name: String, output: URL) throws {
-        let content = TMobileFCCCoverageView(region: region, references: store)
+        let credentials = TMobileFCCCredentialForm(store: PreviewCredentialStore(locked: name == "locked", missing: name == "token-needed"))
+        let model = TMobileFCCCoverageModel(references: store, credentials: credentials)
+        model.prepare()
+        if name == "token-needed" || name == "locked" { model.loadCoverage(region: region) }
+        let content = VStack(alignment: .leading, spacing: 16) {
+            Text("SYNTHETIC FCC SETUP PREVIEW").font(.caption).foregroundStyle(.secondary)
+            TMobileFCCCoverageView(region: name == "choose-area" ? nil : region, model: model)
+        }
             .padding(20).frame(width: width).background(dark ? Color.black : Color.white)
             .environment(\.colorScheme, dark ? .dark : .light)
         // ImageRenderer substitutes unsupported markers for AppKit text fields
@@ -77,4 +86,16 @@ import SwiftUI
         window.orderOut(nil)
     }
     private enum RenderFailure: Error { case invalidFixture, invalidRender }
+}
+
+private struct PreviewCredentialStore: ScopedCredentialStore {
+    let locked: Bool
+    let missing: Bool
+    func read(scope: ScopedCredentialScope) throws -> String? { try read(scope: scope, allowingUserInteraction: true) }
+    func read(scope: ScopedCredentialScope, allowingUserInteraction: Bool) throws -> String? {
+        if locked { throw ScopedCredentialStoreError.interactionRequired }
+        return missing ? nil : #"{"username":"preview@example.invalid","token":"synthetic-preview-token"}"#
+    }
+    func save(_ secret: String, scope: ScopedCredentialScope) throws {}
+    func delete(scope: ScopedCredentialScope) throws {}
 }

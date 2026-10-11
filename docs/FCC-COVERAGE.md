@@ -6,14 +6,19 @@ Reviewed October 10, 2026. The app targets T-Mobile provider ID 130403, with Cal
 
 Generate your own token on the [FCC National Broadband Map](https://broadbandmap.fcc.gov/login): account menu → Manage API Access → Generate. The account owner handles FCC sign-in and the FCC disclaimer. The app needs the FCC account email and generated token, not the account password.
 
-In Coverage → Tower pins & reference coverage → FCC modeled coverage:
+In Coverage → Data & settings:
 
-1. Choose a state, LTE/5G NR, NR speed tier and environment.
-2. Open FCC API access; enter email/token or explicitly Use saved access.
-3. Check for updates to obtain the latest availability date and matching files.
-4. Zoom the map to the comparison area and Download & load map area.
+1. Choose the comparison area on the map.
+2. Select **Load coverage for this area**. The app quietly checks its exact saved FCC Keychain item before asking for access. If none is available, enter the FCC email and token once; Load saves them on this Mac.
+3. The same action checks the latest availability date, downloads or reuses the matching state ZIP, extracts the chosen map area locally and returns to Map after successful persistence.
 
-Save/Use/Forget access operates one app-owned local generic-password Keychain item. No constructor or launch reads it. The owner-run `zsh Tools/SaveFCCAccess.sh` helper prompts from the controlling terminal with token echo disabled and stores the same JSON payload and exact scope. Secrets never become shell arguments or files. macOS may request app access approval when an item created by the temporary helper is first read by the signed app. The helper does not grant a broad ACL.
+Coverage options, FCC access and local-file import are secondary disclosures. Existing source state/category values seed the next selection. California remains the initial state when there is no prior source; all 57 choices remain available. Loading continues across workspace tabs with status and cancellation visible on Map. Closing the window cancels its pending FCC work and clears volatile credentials; it does not stop coverage recording.
+
+The primary flow uses an app-managed cache instead of a Save panel, so an existing filename in Downloads cannot block it. Cache identity includes FCC file ID, availability date, state, provider, technology, tier and other catalogue fields. Each reuse checks the recorded byte count and streaming SHA-256 plus ZIP prefix, within the existing download limit. ZIP structure/CRC and GeoPackage/category/geometry validation still run during import. Local hashes establish integrity against the recorded download, not an FCC digital signature. Byte-invalid entries are replaced only after a new download is complete. Structural archive or GeoPackage corruption invalidates only that source entry, so the next explicit load downloads again. Cancellation, an oversized map area, absent coverage or a category mismatch do not discard the cache. Failures and cancellation retain the current map overlay.
+
+FCC access uses one app-owned local generic-password Keychain item. Constructors and app startup perform no lookup. Opening the FCC flow makes one quiet exact-scope probe per workspace; a locked or approval-required item offers **Unlock saved access** rather than immediately asking for another token. The quiet probe suppresses both Data Protection and legacy Keychain UI and restores the legacy interaction setting on return. Explicit unlock may show normal macOS approval. This replaces the previous manual-only FCC lookup at the owner's request; no enumeration, shared access group or broad ACL is added.
+
+The owner-run `zsh Tools/SaveFCCAccess.sh` helper remains compatible with the same JSON payload and exact scope. Secrets never become shell arguments or log files. The app asks for replacement access only when missing, unreadable or rejected; it does not open an FCC login page automatically.
 
 ## API boundary
 
@@ -31,7 +36,7 @@ Requests reveal account email/token, selected download and ordinary network info
 
 The [FCC download-format specification](https://us-fcc.app.box.com/v/bdc-data-downloads-output), revision 2.4.3 dated August 11, 2026, defines raw mobile propagation polygons. They are carrier-reported models, not measurements or physical tower locations. Coverage schema fields include provider, technology, minimum modeled speed, modeled signal and environment; there are no band or serving-cell identifiers.
 
-Availability **as-of date**, ZIP update date and inner GeoPackage timestamp can differ. Retain the availability date in the overlay. Local imports use an owner-entered date and declared origin. Fresh downloads retain API file ID/state. Reloaded external ZIPs are local imports because their contents may have changed.
+Availability **as-of date**, ZIP update date and inner GeoPackage timestamp can differ. Retain the availability date in the overlay. Local imports use an owner-entered date and declared origin. Fresh downloads and integrity-checked app-cache reuse retain API file ID/state. External ZIPs are local imports because their contents may have changed.
 
 FCC environment 0 is outdoor stationary only; 1 is both outdoor stationary and in vehicle. The app’s derived selection 2 means union(0,1), never an FCC stored value. Outdoor stationary imports both categories; In vehicle imports 1.
 
@@ -59,7 +64,7 @@ On October 10, a bounded unauthenticated HEAD request to [FCC's ASR registration
 
 ## Validation and public release
 
-Isolated scripts are `Tests/FCCCoverageClientTests.sh`, `Tests/TMobileFCCArchiveTests.sh`, `Tests/TMobileFCCGeoPackageTests.sh` and `Tests/TMobileFCCWorkflowTests.sh`. They use intercepted responses, synthetic credentials and temporary folders. No real Keychain item is read by tests.
+Isolated scripts are `Tests/FCCCoverageClientTests.sh`, `Tests/TMobileFCCArchiveTests.sh`, `Tests/TMobileFCCGeoPackageTests.sh`, `Tests/TMobileFCCWorkflowTests.sh`, `Tests/TMobileFCCDownloadCacheTests.sh` and `Tests/TMobileFCCAutomaticLoadTests.sh`. They use intercepted responses, synthetic credentials and temporary folders. No real Keychain item is read by tests.
 
 The official portal download for California/T-Mobile/5G NR 35/3 as of December 31, 2025 was independently obtained; its ZIP update date was September 29, 2026. The 59,946,574-byte ZIP contains a 304,394,240-byte GeoPackage. It declares POLYGON metadata but includes valid MultiPolygon rows, so both validated geometry types are accepted. A generic Sacramento area exercises actual raw geometry and the app’s existing GeoJSON parser.
 
