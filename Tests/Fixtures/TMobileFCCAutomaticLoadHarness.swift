@@ -207,38 +207,56 @@ import zlib
     }
 
     @MainActor static func malformedDownloadRecovery(_ suite: Suite, _ folder: URL, _ zip: Data) async throws {
+        let notSQLite = Data("Synthetic invalid SQLite fixture; no private data.".utf8)
+        let malformedPackage = storedZIP(payload: notSQLite)
+        let integrityFolder = folder.appendingPathComponent("zip-integrity-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: integrityFolder, withIntermediateDirectories: false,
+                                               attributes: [.posixPermissions: 0o700])
+        let archive = integrityFolder.appendingPathComponent("malformed-sqlite.zip")
+        try malformedPackage.write(to: archive)
+        let extracted = try TMobileFCCArchiveSupport.extractGeoPackage(from: archive, to: integrityFolder)
+        suite.expect((try? Data(contentsOf: extracted)) == notSQLite,
+                     "malformed SQLite fixture has valid ZIP records and CRC and extracts byte-for-byte")
+        try await invalidatedDownloadRecovery(suite, folder, zip,
+            malformed: Data([0x50, 0x4b, 0x03, 0x04, 1]), name: "malformed ZIP")
+        try await invalidatedDownloadRecovery(suite, folder, zip,
+            malformed: malformedPackage, name: "malformed SQLite inside a valid ZIP")
+    }
+
+    @MainActor static func invalidatedDownloadRecovery(_ suite: Suite, _ folder: URL, _ zip: Data,
+                                                       malformed: Data, name: String) async throws {
         let f = try fixture(folder, previous: true)
         let previous = f.references.layer
         let referenceFile = f.root.appendingPathComponent("references/fcc-reference.json")
         let previousBytes = try Data(contentsOf: referenceFile)
         var loaded = 0
-        // The official client accepts the ZIP prefix, and the cache publishes
-        // its hash. Actual archive extraction then detects structural corruption.
-        FixtureProtocol.reset([.http(200, dates), .http(200, catalogue), .zip(Data([0x50, 0x4b, 0x03, 0x04, 1]))])
+        // Client/cache validate the envelope and bytes. Actual archive/SQLite
+        // processing must identify corruption and remove the cached download.
+        FixtureProtocol.reset([.http(200, dates), .http(200, catalogue), .zip(malformed)])
         f.model.loadCoverage(region: region) { loaded += 1 }
         try await idle(f.model)
         suite.expect(loaded == 0 && f.references.layer == previous && (try? Data(contentsOf: referenceFile)) == previousBytes,
-                     "structurally malformed download leaves the previous reference bytes intact")
+                     "\(name) leaves the previous reference bytes intact")
         let entriesAfterFailure = try FileManager.default.contentsOfDirectory(atPath: f.root.appendingPathComponent("cache").path)
-        suite.expect(entriesAfterFailure.isEmpty, "malformed published ZIP is invalidated after extraction failure")
+        suite.expect(entriesAfterFailure.isEmpty, "\(name) is invalidated after local processing fails")
 
         FixtureProtocol.reset(replies(zip))
         f.model.loadCoverage(region: region) { loaded += 1 }
         try await idle(f.model)
         suite.expect(FixtureProtocol.requests.count == 3
             && FixtureProtocol.requests.last?.url.path == "/api/public/map/downloads/downloadFile/availability/12345/2",
-                     "next explicit load downloads fresh bytes rather than reusing the malformed ZIP")
+                     "next explicit load downloads fresh bytes after \(name)")
         suite.expect(loaded == 1 && !f.model.reusedDownload && f.model.loadedDate == date
             && f.references.layer?.modeledSignalDBm == [-95] && f.references.layer?.source?.origin == .officialAPI,
-                     "explicit retry imports fresh valid GeoPackage and reports success exactly once")
+                     "explicit retry after \(name) imports fresh valid GeoPackage and reports success exactly once")
         suite.expect(f.store.reads == [false] && f.store.saves == 0 && !f.model.needsAccess,
-                     "archive recovery retains saved access without another prompt or credential rewrite")
+                     "\(name) recovery retains saved access without another prompt or credential rewrite")
 
         FixtureProtocol.reset([.http(200, dates), .http(200, catalogue)])
         f.model.loadCoverage(region: region) { loaded += 1 }
         try await idle(f.model)
         suite.expect(loaded == 2 && f.model.reusedDownload && FixtureProtocol.requests.count == 2,
-                     "fresh valid replacement remains reusable on the following explicit load")
+                     "fresh replacement after \(name) remains reusable on the following explicit load")
     }
 
     @MainActor static func cancellationAndOwnership(_ suite: Suite, _ folder: URL, _ zip: Data) async throws {
@@ -342,6 +360,10 @@ import zlib
         }
         // SQLite has no outstanding statements or transaction; read committed file.
         let payload = try Data(contentsOf: file)
+        return storedZIP(payload: payload)
+    }
+
+    static func storedZIP(payload: Data) -> Data {
         let name = Data("synthetic.gpkg".utf8)
         let checksum = payload.withUnsafeBytes { UInt32(crc32(0, $0.bindMemory(to: Bytef.self).baseAddress, uInt(payload.count))) }
         var zip = Data()
