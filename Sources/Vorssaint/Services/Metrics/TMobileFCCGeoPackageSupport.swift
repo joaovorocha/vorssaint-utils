@@ -302,9 +302,13 @@ enum TMobileFCCGeoPackageSupport {
         func prepare(_ sql: String) throws -> OpaquePointer {
             try checkCancellation()
             var statement: OpaquePointer?
-            guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            let result = sqlite3_prepare_v2(handle, sql, -1, &statement, nil)
+            guard result == SQLITE_OK, let statement else {
                 if let statement { sqlite3_finalize(statement) }
                 try checkCancellation()
+                // Corrupt bytes must remain distinguishable from a valid unsupported schema.
+                let primaryResult = result & 0xff
+                if primaryResult == SQLITE_CORRUPT || primaryResult == SQLITE_NOTADB { throw Failure.cannotRead }
                 throw Failure.unsupportedRawSchema
             }
             return statement

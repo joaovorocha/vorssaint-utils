@@ -114,6 +114,7 @@ private func selection(_ environment: Int = 0, layer: String = "fcc_raw", techno
         try categories(suite, folder)
         try malformed(suite, folder)
         try schemas(suite, folder)
+        try sqliteFailures(suite, folder)
         try budgets(suite, folder)
         let cancelled = Task { () -> FCC.Failure? in
             try? await Task.sleep(nanoseconds: 100_000_000)
@@ -301,8 +302,55 @@ private func selection(_ environment: Int = 0, layer: String = "fcc_raw", techno
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: wrongBox.url)
         suite.fails(.cannotRead, "symlink input is not a regular local GeoPackage") { _ = try FCC.inspect(url: link) }
         suite.fails(.cannotRead, "remote URL rejected") { _ = try FCC.inspect(url: URL(string: "https://example.invalid/data.gpkg")!) }
-        let garbage = folder.appendingPathComponent("garbage.gpkg"); try Data("not SQLite".utf8).write(to: garbage)
-        suite.fails(nil, "non-SQLite content rejected") { _ = try FCC.inspect(url: garbage) }
+    }
+
+    private static func sqliteFailures(_ suite: Suite, _ folder: URL) throws {
+        func prepareResult(_ url: URL, _ sql: String = "SELECT name FROM sqlite_master") throws -> Int32 {
+            var database: OpaquePointer?
+            guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+                if let database { sqlite3_close(database) }
+                throw FCC.Failure.cannotRead
+            }
+            defer { sqlite3_close(database) }
+            var statement: OpaquePointer?
+            defer { if let statement { sqlite3_finalize(statement) } }
+            return sqlite3_prepare_v2(database, sql, -1, &statement, nil) & 0xff
+        }
+
+        let garbage = folder.appendingPathComponent("not-a-database.gpkg")
+        try Data("not SQLite".utf8).write(to: garbage)
+        let corrupt = try SyntheticDatabase(folder: folder)
+        try corrupt.add(geometry([[square]])); corrupt.close()
+        var damaged = try Data(contentsOf: corrupt.url)
+        // Keep the SQLite file header, but invalidate the first schema B-tree page type.
+        damaged[100] = 0xff
+        try damaged.write(to: corrupt.url)
+        for (url, code) in [(garbage, SQLITE_NOTADB), (corrupt.url, SQLITE_CORRUPT)] {
+            let result = try prepareResult(url)
+            suite.expect(result == code, "synthetic fixture produces SQLite prepare failure \(code)")
+            let original = try Data(contentsOf: url)
+            suite.fails(.cannotRead, "SQLite prepare failure \(code) classifies inspection as unreadable") {
+                _ = try FCC.inspect(url: url)
+            }
+            suite.fails(.cannotRead, "SQLite prepare failure \(code) classifies extraction as unreadable") {
+                _ = try FCC.extract(url: url, bounds: region, selection: selection())
+            }
+            let after = try Data(contentsOf: url)
+            suite.expect(after == original, "failed SQLite reads leave source bytes unchanged")
+        }
+
+        let unsupported = try SyntheticDatabase(folder: folder)
+        try unsupported.add(geometry([[square]]))
+        try unsupported.execute("DROP TABLE gpkg_geometry_columns"); unsupported.close()
+        let unsupportedResult = try prepareResult(unsupported.url, "SELECT * FROM gpkg_geometry_columns")
+        suite.expect(unsupportedResult == SQLITE_ERROR,
+                     "valid SQLite with unsupported schema produces ordinary prepare error")
+        suite.fails(.unsupportedRawSchema, "unsupported schema stays distinct from unreadable database") {
+            _ = try FCC.inspect(url: unsupported.url)
+        }
+        suite.fails(.unsupportedRawSchema, "unsupported schema extraction stays distinct from unreadable database") {
+            _ = try FCC.extract(url: unsupported.url, bounds: region, selection: selection())
+        }
     }
 
     private static func budgets(_ suite: Suite, _ folder: URL) throws {
