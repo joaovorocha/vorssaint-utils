@@ -152,6 +152,7 @@ struct ScreenRecordingCaptureSettings: View {
                 }
             }
 
+            #if !SHADOW_UTILITIES
             Section {
                 Toggle(screenshotStrings.shareEnabledToggle, isOn: $sharingEnabled)
                 if sharingEnabled {
@@ -183,6 +184,7 @@ struct ScreenRecordingCaptureSettings: View {
             } header: {
                 Text(screenshotStrings.shareSectionTitle)
             }
+            #endif
         }
         .onAppear { sharing.refresh() }
         .sheet(isPresented: $showingSharedLinks) {

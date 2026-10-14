@@ -21,14 +21,21 @@ signed=()
 stop_process() { stopped+=("$1"); }
 sign_installed_bundle() { signed+=("$1"); }
 
-for DEV in 1 0; do
+for variant in developer official fork; do
+    DEV=0
+    FORK=0
+    [[ "$variant" = developer ]] && DEV=1
+    [[ "$variant" = fork ]] && FORK=1
     stopped=()
     signed=()
-    for name in Vorss 'Vorssaint Utils' Vorssaint 'Vorssaint (Developer)'; do
+    for name in Vorss 'Vorssaint Utils' Vorssaint 'Vorssaint (Developer)' 'Shadow Utilities'; do
         mkdir -p "$install_test_dir/Applications/$name.app"
         print original > "$install_test_dir/Applications/$name.app/content"
     done
-    if (( DEV )); then
+    if (( FORK )); then
+        APP_NAME='Shadow Utilities'
+        EXECUTABLE=ShadowUtilities
+    elif (( DEV )); then
         APP_NAME='Vorssaint (Developer)'
         EXECUTABLE=VorssaintDeveloper
     else
@@ -38,7 +45,12 @@ for DEV in 1 0; do
     source "$install_test_dir/install.zsh"
     [[ "$(cat "$install_test_dir/Applications/$APP_NAME.app/content")" == new ]]
     [[ "${signed[*]}" == "$install_test_dir/Applications/$APP_NAME.app" ]]
-    if (( DEV )); then
+    if (( FORK )); then
+        [[ "${stopped[*]}" == ShadowUtilities ]]
+        for name in Vorss 'Vorssaint Utils' Vorssaint 'Vorssaint (Developer)'; do
+            [[ "$(cat "$install_test_dir/Applications/$name.app/content")" == original ]]
+        done
+    elif (( DEV )); then
         [[ "${stopped[*]}" == VorssaintDeveloper ]]
         for name in Vorss 'Vorssaint Utils' Vorssaint; do
             [[ "$(cat "$install_test_dir/Applications/$name.app/content")" == original ]]

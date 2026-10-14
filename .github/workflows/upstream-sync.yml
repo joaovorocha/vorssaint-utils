@@ -1,0 +1,34 @@
+name: Review upstream updates
+
+on:
+  schedule:
+    - cron: '17 11 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: fork-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    if: >-
+      github.repository == 'joaovorocha/vorssaint-utils' &&
+      github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Propose upstream merge for human review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./Tools/fork-upstream-sync.sh

@@ -125,9 +125,12 @@ jobs:
   fixed-on-main:
     name: Label the issues a merged PR referenced
     if: >-
+      github.repository == 'vorssaint/vorssaint-utils' &&
+      (
       github.event_name == 'pull_request_target'
       && github.event.action == 'closed'
       && github.event.pull_request.merged == true
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -206,9 +209,12 @@ jobs:
       issues: read
       pull-requests: write
     if: >-
+      github.repository == 'vorssaint/vorssaint-utils' &&
+      (
       github.event_name == 'pull_request_target'
       && github.event.action != 'closed'
       && github.event.pull_request.user.type != 'Bot'
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -301,9 +307,12 @@ jobs:
   reporter-check:
     name: Ask the reporters a stable release reached
     if: >-
+      github.repository == 'vorssaint/vorssaint-utils' &&
+      (
       github.event_name == 'workflow_run'
       && github.event.workflow_run.conclusion == 'success'
       && github.event.workflow_run.event == 'push'
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -399,7 +408,7 @@ jobs:
 
   close-unanswered:
     name: Close the checks nobody answered
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'vorssaint/vorssaint-utils' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

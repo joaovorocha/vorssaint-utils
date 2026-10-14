@@ -8,6 +8,59 @@ import Foundation
 /// marker the script leaves behind. No AppKit, so the unit tests cover the
 /// quoting and the script's failure-reporting contract.
 enum UpdateInstallerSupport {
+    /// A validated identity is safe to embed in both a codesign requirement and
+    /// the installer shell script. Update feeds never supply these values.
+    struct SigningIdentity: Equatable {
+        let bundleIdentifier: String
+        let teamID: String
+
+        static let official = SigningIdentity(bundleIdentifier: "com.vorssaint.utils",
+                                               teamID: "3D485NHW29")!
+
+        init?(bundleIdentifier: String, teamID: String) {
+            guard Self.validTeamID(teamID),
+                  !bundleIdentifier.isEmpty,
+                  bundleIdentifier.split(separator: ".", omittingEmptySubsequences: false)
+                    .allSatisfy({ !$0.isEmpty }),
+                  bundleIdentifier.utf8.allSatisfy({ byte in
+                      (65...90).contains(byte) || (97...122).contains(byte)
+                          || (48...57).contains(byte) || byte == 45 || byte == 46
+                  }) else { return nil }
+            self.bundleIdentifier = bundleIdentifier
+            self.teamID = teamID
+        }
+
+        static func validTeamID(_ value: String) -> Bool {
+            value.utf8.count == 10 && value.utf8.allSatisfy {
+                (65...90).contains($0) || (48...57).contains($0)
+            }
+        }
+
+        var dmgRequirement: String {
+            "anchor apple generic and certificate leaf[subject.OU] = \"\(teamID)\""
+        }
+
+        var appRequirement: String {
+            "identifier \"\(bundleIdentifier)\" and \(dmgRequirement)"
+        }
+    }
+
+    static let forkBundleIdentifier = "io.github.joaovorocha.shadowutils"
+
+    /// A local or ad-hoc fork has no release trust root. The configured public
+    /// Team ID must belong to the valid signature on this exact fork bundle.
+    static func forkSigningIdentity(configuredTeamID: String?,
+                                    bundleIdentifier: String?,
+                                    signatureTeamID: String?,
+                                    signatureIsValid: Bool) -> SigningIdentity? {
+        guard signatureIsValid,
+              let teamID = configuredTeamID,
+              teamID != SigningIdentity.official.teamID,
+              signatureTeamID == teamID,
+              bundleIdentifier == forkBundleIdentifier else { return nil }
+        return SigningIdentity(bundleIdentifier: forkBundleIdentifier, teamID: teamID)
+    }
+
     /// Marker the script writes before each fallible step (write-ahead, so
     /// the marker names the failing step even if the script dies mid-way)
     /// and replaces with "ok" once the new bundle is in place.
@@ -23,7 +76,7 @@ enum UpdateInstallerSupport {
     /// $4 result marker path, $5 uid to relaunch as (used when running as
     /// root, where a plain `open` could launch the app as root), $6 expected
     /// version from the trusted release tag.
-    static func installerScript() -> String {
+    static func installerScript(signingIdentity: SigningIdentity = .official) -> String {
         """
         #!/bin/sh
         APP="$1"; DMG="$2"; PID="$3"; RESULT="$4"; ASUSER="$5"; EXPECTED_VERSION="$6"
@@ -63,7 +116,7 @@ enum UpdateInstallerSupport {
         }
         while kill -0 "$PID" 2>/dev/null; do sleep 0.3; done
         note fail-dmg-verify
-        DMG_VERIFY_REQ='anchor apple generic and certificate leaf[subject.OU] = "3D485NHW29"'
+        DMG_VERIFY_REQ=\(shellSingleQuoted(signingIdentity.dmgRequirement))
         if ! /usr/bin/codesign -v --strict -R="$DMG_VERIFY_REQ" "$DMG" 2>/dev/null; then
             /bin/rm -f "$DMG"
             finalize
@@ -120,7 +173,7 @@ enum UpdateInstallerSupport {
                     elif /usr/sbin/spctl -a -t exec "$STAGE" >/dev/null 2>&1; then
                         GATEKEEPER_OK=1
                     fi
-                    VERIFY_REQ='identifier "com.vorssaint.utils" and anchor apple generic and certificate leaf[subject.OU] = "3D485NHW29"'
+                    VERIFY_REQ=\(shellSingleQuoted(signingIdentity.appRequirement))
                     note fail-verify
                     if /usr/bin/codesign -v --deep --strict -R="$VERIFY_REQ" "$STAGE" 2>/dev/null \
                         && [ "$GATEKEEPER_OK" = 1 ]; then
@@ -182,8 +235,9 @@ enum UpdateInstallerSupport {
                                        pid: Int32,
                                        resultPath: String,
                                        uid: uid_t,
-                                       expectedVersion: String) -> String {
-        let script = shellSingleQuoted(installerScript())
+                                       expectedVersion: String,
+                                       signingIdentity: SigningIdentity = .official) -> String {
+        let script = shellSingleQuoted(installerScript(signingIdentity: signingIdentity))
         let args = [appPath, dmgPath, "\(pid)", resultPath, "\(uid)", expectedVersion]
             .map(shellSingleQuoted)
             .joined(separator: " ")

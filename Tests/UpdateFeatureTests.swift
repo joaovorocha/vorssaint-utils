@@ -9,10 +9,13 @@ import CoreGraphics
 import Darwin
 import Foundation
 import ImageIO
+import Security
 import VMStatisticsCompat
 
 enum UpdateFeatureTests {
     static func run(_ suite: TestSuite) {
+        UpdateSigningPolicyTests.run(suite)
+        UpdateAssetPolicyTests.run(suite)
         suite.expect(BrightnessUpdatePromptInfo.isUpgrade(appVersion: "3.4.0-beta.7",
                                                           previousVersion: "3.4.0-beta.6")
                     && BrightnessUpdatePromptInfo.isUpgrade(appVersion: "3.4.0",
@@ -2015,5 +2018,125 @@ enum UpdateFeatureTests {
                 .contains(.appUpdates),
                "with the schedule off, app updates need no notification permission")
 
+    }
+}
+
+/// Exercise the initial download boundary independently of signing and transport.
+enum UpdateAssetPolicyTests {
+    static func run(_ suite: TestSuite) {
+        let releaseRoot = "https://github.com/joaovorocha/vorssaint-utils/releases/download/"
+        func accepts(_ version: String, tag: String? = nil, name: String? = nil,
+                     url: String? = nil) -> Bool {
+            let tag = tag ?? "v\(version)"
+            let name = name ?? "ShadowUtilities-\(version).dmg"
+            guard let downloadURL = URL(string: url ?? "\(releaseRoot)\(tag)/\(name)") else { return false }
+            return UpdateServiceSupport.isForkReleaseAsset(name: name, downloadURL: downloadURL,
+                                                           tagName: tag)
+        }
+        for version in ["0.1.0", "1.2.3-beta.1", "1.2.3-rc.2", "1.2.3-alpha.0",
+                        "1.2.3-beta.2.1", "1.2.3+build.7", "10.20.30"] {
+            suite.expect(accepts(version), "the fork accepts its exact versioned asset: \(version)")
+        }
+        for version in ["", "1", "1.2", "01.2.3", "1.02.3", "1.2.03", "1.2.3-beta.01",
+                        "1.2.3-", "1.2.3+", "1.2.3/extra", "1.2.3\n", "1.2.3 "] {
+            suite.expect(!accepts(version), "an invalid semantic version cannot select a fork asset")
+        }
+        suite.expect(!accepts("1.2.3", tag: "1.2.3") && !accepts("1.2.3", tag: "V1.2.3"),
+                     "the fork release tag uses the exact lowercase v prefix")
+        for name in ["Vorssaint.dmg", "ShadowUtilities.dmg", "ShadowUtilities-1.2.4.dmg",
+                     "ShadowUtilities-1.2.3.DMG", "ShadowUtilities-1.2.3.dmg.zip"] {
+            suite.expect(!accepts("1.2.3", name: name), "another filename cannot become a fork update")
+        }
+        let path = "/joaovorocha/vorssaint-utils/releases/download/v1.2.3/ShadowUtilities-1.2.3.dmg"
+        for url in ["http://github.com\(path)", "https://example.com\(path)",
+                    "https://github.com.example.com\(path)", "https://github.com@evil.example\(path)",
+                    "https://user@github.com\(path)", "https://user:password@github.com\(path)",
+                    "https://github.com:443\(path)", "https://github.com\(path)?download=1",
+                    "https://github.com\(path)#asset", "https://github.com\(path)/extra",
+                    "https://github.com/vorssaint/vorssaint-utils/releases/download/v1.2.3/ShadowUtilities-1.2.3.dmg",
+                    "https://github.com/joaovorocha/another-repo/releases/download/v1.2.3/ShadowUtilities-1.2.3.dmg",
+                    "https://github.com/joaovorocha/vorssaint-utils/releases/download/v1.2.4/ShadowUtilities-1.2.3.dmg",
+                    "https://github.com/joaovorocha/vorssaint-utils/releases/download/v1.2.3/ShadowUtilities-1.2.4.dmg",
+                    "https://github.com/joaovorocha/vorssaint-utils/releases/download/v1.2.3/%53hadowUtilities-1.2.3.dmg",
+                    "https://github.com/joaovorocha/vorssaint-utils/releases/download/v1.2.3/../v1.2.3/ShadowUtilities-1.2.3.dmg"] {
+            suite.expect(!accepts("1.2.3", url: url), "the initial fork download stays at the exact GitHub asset")
+        }
+    }
+}
+
+/// The updater's trust root comes from the installed release, never its feed.
+/// Cover the fork and official policies together, independent of build flags.
+enum UpdateSigningPolicyTests {
+    static func run(_ suite: TestSuite) {
+        let forkBundle = UpdateInstallerSupport.forkBundleIdentifier
+        let forkTeam = "AB12CD34E5"
+        func identity(team: String? = "AB12CD34E5",
+                      bundle: String? = "io.github.joaovorocha.shadowutils",
+                      signer: String? = "AB12CD34E5",
+                      valid: Bool = true) -> UpdateInstallerSupport.SigningIdentity? {
+            UpdateInstallerSupport.forkSigningIdentity(configuredTeamID: team,
+                                                        bundleIdentifier: bundle,
+                                                        signatureTeamID: signer,
+                                                        signatureIsValid: valid)
+        }
+
+        guard let fork = identity() else {
+            suite.expect(false, "a valid fork release establishes its own update identity")
+            return
+        }
+        suite.expect(fork.bundleIdentifier == forkBundle && fork.teamID == forkTeam,
+                     "a valid fork release pins its own bundle and signing team")
+        for team in [nil, "", "AB12CD34E", "AB12CD34E56", "ab12cd34e5", " AB12CD34E5",
+                     "AB12CD34E5\n", "AB12CD34É5", "A'12CD34E5", "A$12CD34E5"] as [String?] {
+            suite.expect(identity(team: team, signer: team) == nil,
+                         "missing or malformed release metadata cannot enable updates")
+        }
+        suite.expect(identity(valid: false) == nil,
+                     "an invalid or ad-hoc bundle cannot establish a release identity")
+        suite.expect(identity(signer: nil) == nil && identity(signer: "ZY98XW76V5") == nil,
+                     "the configured Team ID must match the verified bundle signer")
+        for bundle in [nil, "", "com.vorssaint.utils", forkBundle + ".dev"] as [String?] {
+            suite.expect(identity(bundle: bundle) == nil,
+                         "another bundle cannot use the fork release channel")
+        }
+        let official = UpdateInstallerSupport.SigningIdentity.official
+        suite.expect(identity(team: official.teamID, signer: official.teamID) == nil,
+                     "the fork never reuses the original publisher's release identity")
+        for invalidBundle in ["", "example..app", "example'app", "example\"app", "example$app",
+                              "example/app", "example app", "example.app\n"] {
+            suite.expect(UpdateInstallerSupport.SigningIdentity(bundleIdentifier: invalidBundle,
+                                                                 teamID: forkTeam) == nil,
+                         "a bundle identifier cannot inject codesign requirements or shell syntax")
+        }
+
+        suite.expect(official.appRequirement == "identifier \"com.vorssaint.utils\" and anchor apple generic and certificate leaf[subject.OU] = \"3D485NHW29\"",
+                     "the official app preserves its original pinned signing requirement")
+        for requirement in [official.appRequirement, official.dmgRequirement,
+                            fork.appRequirement, fork.dmgRequirement] {
+            var parsed: SecRequirement?
+            suite.expect(SecRequirementCreateWithString(requirement as CFString, [], &parsed) == errSecSuccess
+                            && parsed != nil,
+                         "the signing policy generates an accepted macOS codesign requirement")
+        }
+
+        let script = UpdateInstallerSupport.installerScript(signingIdentity: fork)
+        suite.expect(script.contains(forkTeam) && script.contains(forkBundle)
+                        && !script.contains(official.teamID) && !script.contains(official.bundleIdentifier),
+                     "the fork installer contains only its own publisher and bundle identity")
+        let verification = script.range(of: "DMG_VERIFY_REQ=")
+        let mount = script.range(of: "/usr/bin/hdiutil attach")
+        suite.expect(verification != nil && mount != nil
+                        && verification!.lowerBound < mount!.lowerBound,
+                     "the fork verifies its DMG before mounting any update content")
+        suite.expect(script.contains("spctl -a -t exec")
+                        && script.contains("\"$BUNDLE_VERSION\" = \"$EXPECTED_VERSION\"")
+                        && script.contains("/bin/mv \"$BACKUP\" \"$DEST\""),
+                     "the fork preserves Gatekeeper, expected version and failed-swap rollback gates")
+        let elevated = UpdateInstallerSupport.elevatedInstallCommand(
+            appPath: "/Applications/Shadow Utilities.app", dmgPath: "/tmp/fork.dmg", pid: 42,
+            resultPath: "/tmp/result", uid: 501, expectedVersion: "0.1.0-beta.1", signingIdentity: fork)
+        suite.expect(elevated.contains(forkTeam) && elevated.contains(forkBundle)
+                        && !elevated.contains(official.teamID),
+                     "administrator installation keeps the same fork trust root")
     }
 }

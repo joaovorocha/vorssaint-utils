@@ -1786,14 +1786,56 @@ enum RepositoryFeatureTests {
         }
         suite.expect(runsSigningSetup,
                "an identity-less build that installs invokes Tools/setup-signing.sh itself")
-        // The guard is on the install, not on the variant: a plain --install
-        // replaces the bundle under the released id, so it strands the grants
-        // on the app people actually use. CI never passes --install.
+        // Run the production guard and identity helpers with inert commands.
+        // Original installs still need stable local signing; the fork must
+        // never unlock or provision the original app's legacy identity.
         let buildScriptCode = buildScript.components(separatedBy: "\n")
             .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }
-        suite.expect(buildScriptCode.contains { $0.contains("(( DEV || INSTALL ))")
-                                            && $0.contains("developer_id_identity") },
-               "the signing setup guard covers every install, not only the Developer variant")
+        if let signingStart = buildScript.range(of: "developer_id_identity() {"),
+           let signingEnd = buildScript.range(of: "codesign_with_timestamp_retry() {"),
+           signingStart.lowerBound < signingEnd.lowerBound {
+            let signingPolicy = String(buildScript[signingStart.lowerBound..<signingEnd.lowerBound])
+                .replacingOccurrences(of: "/usr/bin/codesign", with: "fixture_codesign")
+                .replacingOccurrences(of: "./Tools/setup-signing.sh", with: "fixture_setup")
+            let fixtures = """
+            exec 3>&1
+            security() { print security >&3; return 0; }
+            fixture_codesign() { print legacy-sign >&3; return 1; }
+            fixture_setup() { print setup >&3; return 0; }
+            cp() { :; }
+            rm() { :; }
+            mktemp() { print /tmp/unused-signing-fixture; }
+            echo() { :; }
+            LEGACY_IDENTITY=fixture
+            SHADOW_UPDATE_TEAM_ID=''
+            """
+            for (name, developer, fork, install, needsSetup) in [
+                ("original preview", 0, 0, 0, false),
+                ("original install", 0, 0, 1, true),
+                ("developer build", 1, 0, 0, true),
+                ("fork preview", 0, 1, 0, false),
+                ("fork install", 0, 1, 1, false),
+            ] {
+                let probe = fixtures + "\nDEV=\(developer)\nFORK=\(fork)\nINSTALL=\(install)\n"
+                    + signingPolicy
+                    + (fork == 1 ? "\ndeveloper_id_identity >/dev/null\nlegacy_identity_installed\nprint legacy-status:$?\n" : "")
+                let result = BoundedProcessRunner.run("/bin/zsh", ["-f", "-c", probe],
+                                                      timeout: 5, maxOutputBytes: 4_096,
+                                                      environment: ["PATH": "/usr/bin:/bin"])
+                let events = String(decoding: result.output, as: UTF8.self)
+                    .split(whereSeparator: \.isNewline).map(String.init)
+                suite.expect(result.status == 0 && !result.timedOut,
+                             "the isolated signing policy probe finishes: \(name)")
+                suite.expect(events.filter { $0 == "setup" }.count == (needsSetup ? 1 : 0),
+                             "stable local signing setup follows the install variant: \(name)")
+                if fork == 1 {
+                    suite.expect(events == ["legacy-status:1"],
+                                 "the fork refuses legacy signing before any security or signing command: \(name)")
+                }
+            }
+        } else {
+            suite.expect(false, "the production signing policy reads back for its isolated execution")
+        }
         // The setup script must run against the stock /usr/bin/openssl, which
         // is LibreSSL: it rejects OpenSSL 3's -legacy flag outright, and the
         // script once died on exactly that with its stderr discarded. The
@@ -1855,12 +1897,30 @@ enum RepositoryFeatureTests {
             Set(text.components(separatedBy: CharacterSet(charactersIn: " \n\t\"(),"))
                 .filter { $0.hasPrefix("/etc/sudoers.d/") })
         }
-        let appRuleFiles = sudoersRuleFiles(
-            repository.source(at: "Sources/Vorssaint/Services/ShellSupport.swift"))
+        let sudoersSource = repository.source(at: "Sources/Vorssaint/Services/ShellSupport.swift")
+        let variantRules = sudoersSource.components(separatedBy: "#if SHADOW_UTILITIES")
+            .dropFirst().first?.components(separatedBy: "#endif").first ?? ""
+        let forkRuleFiles = sudoersRuleFiles(variantRules.components(separatedBy: "#else").first ?? "")
+        let originalRuleFiles = sudoersRuleFiles(variantRules.components(separatedBy: "#else")
+            .dropFirst().first ?? "")
         let scriptRuleFiles = sudoersRuleFiles(uninstallScriptSource.components(separatedBy: "\n")
             .first { $0.hasPrefix("RULES=(") } ?? "")
-        suite.expect(!appRuleFiles.isEmpty && scriptRuleFiles == appRuleFiles,
-               "script uninstall looks for the same closed-lid rule files as the app: \(scriptRuleFiles.sorted())")
+        suite.expect(!originalRuleFiles.isEmpty && scriptRuleFiles == originalRuleFiles,
+               "the original-only script uninstall keeps the original closed-lid rule files: \(scriptRuleFiles.sorted())")
+        suite.expect(forkRuleFiles.count == 1 && forkRuleFiles.isDisjoint(with: scriptRuleFiles)
+                && uninstallScriptSource.contains("BUNDLE=\"com.vorssaint.utils\"")
+                && uninstallScriptSource.contains("APP=\"/Applications/Vorssaint.app\"")
+                && !uninstallScriptSource.contains("io.github.joaovorocha.shadowutils")
+                && !uninstallScriptSource.contains("Shadow Utilities.app")
+                && selfUninstallSource.contains("Sudoers.remove(completion: then)"),
+               "the script targets the original app while native uninstall uses its own variant's sudoers rule")
+        #if SHADOW_UTILITIES
+        suite.expect(forkRuleFiles == [Sudoers.rulePath] && !scriptRuleFiles.contains(Sudoers.rulePath),
+                     "the compiled fork owns a unique closed-lid rule outside the original uninstall tool")
+        #else
+        suite.expect(originalRuleFiles.contains(Sudoers.rulePath) && !forkRuleFiles.contains(Sudoers.rulePath),
+                     "the compiled original app keeps the rule its uninstall tool removes")
+        #endif
         // Restoring sleep used to be fired and forgotten at both exits. A
         // failure there leaves `pmset disablesleep 1` set system-wide, and
         // removal deletes the flag that launch-time recovery reads before it

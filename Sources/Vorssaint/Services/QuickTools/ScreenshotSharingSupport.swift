@@ -62,8 +62,16 @@ struct ScreenshotShareResponse: Decodable {
 }
 
 enum ScreenshotSharingSupport {
+    static var isAvailable: Bool {
+        #if SHADOW_UTILITIES
+        false
+        #else
+        true
+        #endif
+    }
+
     static func uploadShortcutEnabled(in defaults: UserDefaults = .standard) -> Bool {
-        defaults.bool(forKey: DefaultsKey.screenshotUploadShortcutEnabled)
+        isAvailable && defaults.bool(forKey: DefaultsKey.screenshotUploadShortcutEnabled)
             && defaults.bool(forKey: DefaultsKey.screenshotSharingEnabled)
     }
 
@@ -110,6 +118,9 @@ enum ScreenshotSharingSupport {
     }
 
     static func uploadURL(endpoint: URL, duration: ScreenshotShareDuration) -> URL? {
+        #if SHADOW_UTILITIES
+        return nil
+        #else
         let base = endpoint.appendingPathComponent("v1", isDirectory: true)
             .appendingPathComponent("screenshots", isDirectory: false)
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
@@ -118,6 +129,7 @@ enum ScreenshotSharingSupport {
         components.queryItems = [URLQueryItem(name: "expiresIn",
                                                value: String(duration.rawValue))]
         return components.url
+        #endif
     }
 
     static func record(response: ScreenshotShareResponse,

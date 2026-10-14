@@ -228,7 +228,25 @@ enum ScreenshotShareCompletionTests {
     static func run(_ suite: TestSuite) {
         var finished = false
         Task { @MainActor in
+            #if SHADOW_UTILITIES
+            let gate = CreationGate()
+            do {
+                _ = try await gate.createLink(pngData: Data([137, 80, 78, 71, 13, 10, 26, 10]), duration: .oneHour)
+                suite.expect(false, "fork screenshot creation refuses remote sharing")
+            } catch ScreenshotShareError.unavailable {
+                suite.expect(gate.session.uploads == 0 && gate.writes == 0,
+                             "fork sharing fails before transport or link storage even when preferences enable it")
+            } catch {
+                suite.expect(false, "fork screenshot sharing reports unavailable")
+            }
+            let uploader = Uploader()
+            uploader.uploadLastCapture()
+            await Task.yield()
+            suite.expect(uploader.uploads == 0 && uploader.uploadingCaptureID == nil,
+                         "fork upload shortcut cannot start an upload despite enabled imported preferences")
+            #else
             await checks(suite)
+            #endif
             finished = true
         }
         let deadline = Date().addingTimeInterval(10)

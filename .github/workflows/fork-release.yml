@@ -1,0 +1,163 @@
+name: Fork release draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing fork version tag on main, for example v0.1.0-beta.1'
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: fork-release-signing
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: >-
+      github.repository == 'joaovorocha/vorssaint-utils' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'joaovorocha' &&
+      github.triggering_actor == 'joaovorocha'
+    name: Verify fork tag and test without Apple credentials
+    runs-on: macos-26
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    outputs:
+      commit_sha: ${{ steps.source.outputs.commit_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify release source
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORK_RELEASE_TAG: ${{ inputs.tag }}
+        run: ./Tools/fork-release-preflight.sh
+      - name: Check out verified release commit for tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.source.outputs.commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Unit tests
+        run: ./build.sh --fork --test
+
+  sign:
+    name: Approve, sign and notarize Shadow Utilities
+    needs: preflight
+    if: >-
+      needs.preflight.result == 'success' &&
+      github.repository == 'joaovorocha/vorssaint-utils' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'joaovorocha' &&
+      github.triggering_actor == 'joaovorocha'
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: fork-release-signing
+    permissions:
+      contents: read
+    env:
+      SHADOW_UPDATE_TEAM_ID: ${{ vars.SHADOW_UPDATE_TEAM_ID }}
+      FORK_RELEASE_TAG: ${{ inputs.tag }}
+      FORK_RELEASE_COMMIT: ${{ needs.preflight.outputs.commit_sha }}
+    outputs:
+      commit_sha: ${{ needs.preflight.outputs.commit_sha }}
+      artifact_name: shadow-release-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.preflight.outputs.commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Reverify immutable source and signing Team pin
+        shell: zsh {0}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ./Tools/fork-release-preflight.sh
+          source Tools/fork-common.sh
+          fork_require_team
+      - name: Import own Developer ID certificate
+        env:
+          REQUIRE_SIGNING: '1'
+          SIGNING_CERT_P12: ${{ secrets.SHADOW_SIGNING_CERT_P12 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SHADOW_SIGNING_CERT_PASSWORD }}
+        run: ./Tools/ci-setup-signing.sh
+      - name: Build fork with its own update trust pin
+        run: ./build.sh --fork
+      - name: Verify fork bundle and Team
+        shell: zsh {0}
+        run: |
+          set -euo pipefail
+          source Tools/fork-common.sh
+          fork_verify_app 'build/stage/Shadow Utilities.app'
+      - name: Selftest
+        run: ./build/ShadowUtilities --selftest
+      - name: Notarize app using shared notarization helper
+        env:
+          REQUIRE_NOTARIZATION: '1'
+          NOTARY_API_KEY_P8: ${{ secrets.SHADOW_NOTARY_API_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.SHADOW_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.SHADOW_NOTARY_ISSUER_ID }}
+        run: ./Tools/notarize.sh 'build/stage/Shadow Utilities.app'
+      - name: Package and sign fork DMG
+        run: ./Tools/fork-package.sh
+      - name: Notarize DMG using shared notarization helper
+        env:
+          REQUIRE_NOTARIZATION: '1'
+          NOTARY_API_KEY_P8: ${{ secrets.SHADOW_NOTARY_API_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.SHADOW_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.SHADOW_NOTARY_ISSUER_ID }}
+        run: ./Tools/notarize.sh "dist/ShadowUtilities-${FORK_RELEASE_TAG#v}.dmg"
+      - name: Verify distribution artifact and stage review notes
+        run: ./Tools/fork-stage-release.sh
+      - name: Upload verified draft artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: shadow-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/shadow-release-bundle
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+      - name: Remove temporary signing keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/vorssaint-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/vorssaint-signing.p12"
+
+  draft:
+    name: Create draft for manual publication
+    needs: sign
+    if: >-
+      needs.sign.result == 'success' &&
+      github.repository == 'joaovorocha/vorssaint-utils' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'joaovorocha' &&
+      github.triggering_actor == 'joaovorocha'
+    runs-on: macos-26
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.sign.outputs.commit_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ needs.sign.outputs.artifact_name }}
+          path: ${{ runner.temp }}/shadow-release-bundle
+      - name: Create draft without Apple credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORK_RELEASE_TAG: ${{ inputs.tag }}
+          FORK_RELEASE_COMMIT: ${{ needs.sign.outputs.commit_sha }}
+        run: ./Tools/fork-draft-release.sh

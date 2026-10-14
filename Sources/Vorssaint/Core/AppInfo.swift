@@ -2,16 +2,62 @@
 // Copyright (C) 2026 Vorssaint
 
 import Foundation
+#if SHADOW_UTILITIES
+import Security
+#endif
 
 /// Static identity of the app, shared by UI, notifications and tooling.
 enum AppInfo {
+    #if SHADOW_UTILITIES
+    static let name = "Shadow Utilities"
+    static let copyright = "© 2026 Shadow Utilities contributors"
+    static let repository = "joaovorocha/vorssaint-utils"
+    static let repositoryURL = URL(string: "https://github.com/joaovorocha/vorssaint-utils")!
+    static let websiteURL = repositoryURL
+    static let coffeeURL = repositoryURL
+    static let discordURL = URL(string: "https://github.com/joaovorocha/vorssaint-utils/issues")!
+    static let socialURL = URL(string: "https://github.com/joaovorocha")!
+    #else
     static let name = "Vorssaint"
     static let copyright = "© 2026 Vorssaint"
+    static let repository = "vorssaint/vorssaint-utils"
     static let websiteURL = URL(string: "https://vorssaint.com")!
     static let repositoryURL = URL(string: "https://github.com/vorssaint/vorssaint-utils")!
     static let coffeeURL = URL(string: "https://buymeacoffee.com/vorssaint")!
     static let discordURL = URL(string: "https://discord.gg/M6BwWH4BJp")!
     static let socialURL = URL(string: "https://x.com/vorssaint")!
+    #endif
+
+    /// Fork releases pin their own public Team ID in the signed Info.plist.
+    /// Missing metadata, a local signature or a changed bundle disables updates.
+    static var updateSigningIdentity: UpdateInstallerSupport.SigningIdentity? {
+        #if SHADOW_UTILITIES
+        guard let teamID = Bundle.main.object(forInfoDictionaryKey: "ShadowUpdateTeamID") as? String,
+              teamID != UpdateInstallerSupport.SigningIdentity.official.teamID,
+              let identity = UpdateInstallerSupport.SigningIdentity(
+                bundleIdentifier: UpdateInstallerSupport.forkBundleIdentifier, teamID: teamID),
+              Bundle.main.bundleIdentifier == identity.bundleIdentifier else { return nil }
+
+        var code: SecStaticCode?
+        var requirement: SecRequirement?
+        guard SecStaticCodeCreateWithPath(Bundle.main.bundleURL as CFURL, [], &code) == errSecSuccess,
+              let code,
+              SecRequirementCreateWithString(identity.appRequirement as CFString, [], &requirement) == errSecSuccess,
+              SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), requirement) == errSecSuccess
+        else { return nil }
+
+        var information: CFDictionary?
+        guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation),
+                                             &information) == errSecSuccess,
+              let signing = information as? [String: Any] else { return nil }
+        return UpdateInstallerSupport.forkSigningIdentity(
+            configuredTeamID: teamID, bundleIdentifier: Bundle.main.bundleIdentifier,
+            signatureTeamID: signing[kSecCodeInfoTeamIdentifier as String] as? String,
+            signatureIsValid: true)
+        #else
+        return .official
+        #endif
+    }
 
     /// The bundle version. The fallback only applies to the bare binary
     /// (e.g. `--selftest`), never the shipped app, which reads its Info.plist.

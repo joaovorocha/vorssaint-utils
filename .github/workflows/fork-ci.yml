@@ -1,0 +1,35 @@
+name: Fork CI
+
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.repository == 'joaovorocha/vorssaint-utils'
+    name: Shadow Utilities build and tests
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Check fork scripts
+        run: |
+          for script in Tools/fork-*.sh; do zsh -n "$script"; done
+      - name: Build unsigned fork
+        run: ./build.sh --fork
+      - name: Selftest
+        run: ./build/ShadowUtilities --selftest
+      - name: Unit tests
+        run: ./build.sh --fork --test

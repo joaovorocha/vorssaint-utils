@@ -844,7 +844,7 @@ final class NotchService: ObservableObject {
     }
     /// A detail's title, the app panel's, or the island's own with no sections.
     var detailTitle: String {
-        if showingAppPanel { return "Vorssaint" }
+        if showingAppPanel { return "\(AppInfo.name)" }
         let language = L10n.shared.language
         guard let metric = selectedMetric else { return FeatureStrings.notch(language).title }
         // The fan card opens Fan Control, so its page shares that title.

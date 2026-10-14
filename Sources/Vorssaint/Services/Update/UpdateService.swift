@@ -27,7 +27,7 @@ final class UpdateService: ObservableObject {
     /// preview. Set alongside `.available`; cleared otherwise.
     @Published private(set) var availableNotes: String?
 
-    private let repository = "vorssaint/vorssaint-utils"
+    private let repository = AppInfo.repository
     private var downloadURL: URL?
     /// Size the release advertises for the asset, used to bound the download.
     private var downloadExpectedBytes: Int64?
@@ -36,6 +36,19 @@ final class UpdateService: ObservableObject {
     private var downloadSession: URLSession?
 
     private init() {}
+
+    /// Fail before network access or installer handoff when this build has no
+    /// verified release identity. The original app retains its pinned identity.
+    private func trustedUpdateIdentity() -> UpdateInstallerSupport.SigningIdentity? {
+        guard let identity = AppInfo.updateSigningIdentity else {
+            downloadURL = nil
+            downloadExpectedBytes = nil
+            availableNotes = nil
+            state = .failed("Automatic updates are unavailable for this local build. Rebuild from the fork source, or install a signed Shadow Utilities release.")
+            return nil
+        }
+        return identity
+    }
 
     var autoCheckEnabled: Bool {
         get { UserDefaults.standard.object(forKey: DefaultsKey.autoCheckUpdates) as? Bool ?? true }
@@ -75,6 +88,7 @@ final class UpdateService: ObservableObject {
             }
             return
         }
+        guard trustedUpdateIdentity() != nil else { return }
         configureAutomaticChecks()
         if autoCheckEnabled {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
@@ -87,6 +101,7 @@ final class UpdateService: ObservableObject {
         refreshTimer?.invalidate()
         refreshTimer = nil
         guard autoCheckEnabled else { return }
+        guard trustedUpdateIdentity() != nil else { return }
         // Hourly (was daily). Combined with the activate / panel-open checks, a new
         // release surfaces within the hour instead of up to a day later.
         let timer = Timer(timeInterval: 60 * 60, repeats: true) { [weak self] _ in
@@ -113,6 +128,7 @@ final class UpdateService: ObservableObject {
             lastChecked = Date()
             return
         }
+        guard trustedUpdateIdentity() != nil else { return }
         if case .checking = state { return }
         if case .downloading = state { return }
         if case .installing = state { return }
@@ -124,7 +140,7 @@ final class UpdateService: ObservableObject {
 
         var request = URLRequest(url: URL(string: endpoint)!)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("Vorssaint/\(AppInfo.version)", forHTTPHeaderField: "User-Agent")
+        request.setValue("\(AppInfo.name)/\(AppInfo.version)", forHTTPHeaderField: "User-Agent")
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
         URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
@@ -153,7 +169,15 @@ final class UpdateService: ObservableObject {
                 }
 
                 let candidates = releases.map { rel -> UpdateServiceSupport.ReleaseCandidate in
+                    #if SHADOW_UTILITIES
+                    let asset = rel.assets.first {
+                        UpdateServiceSupport.isForkReleaseAsset(name: $0.name,
+                                                                downloadURL: $0.browserDownloadURL,
+                                                                tagName: rel.tagName)
+                    }
+                    #else
                     let asset = rel.assets.first { $0.name.hasSuffix(".dmg") }
+                    #endif
                     return UpdateServiceSupport.ReleaseCandidate(
                         tagName: rel.tagName,
                         isPrerelease: rel.prerelease ?? false,
@@ -207,6 +231,7 @@ final class UpdateService: ObservableObject {
 
     func downloadAndInstall() {
         if AppInfo.isDeveloperBuild { return }  // never replace the local dev build over itself
+        guard trustedUpdateIdentity() != nil else { return }
         guard let downloadURL else { return }
         // Pre-flight BEFORE spending the download: a translocated app or one
         // running from a read-only volume (the mounted DMG) can never be
@@ -277,7 +302,7 @@ final class UpdateService: ObservableObject {
                     }
                     // Move out of the session's scratch space before handing off.
                     let dmgURL = FileManager.default.temporaryDirectory
-                        .appendingPathComponent("Vorssaint-update.dmg")
+                        .appendingPathComponent("\(AppInfo.name)-update.dmg")
                     try? FileManager.default.removeItem(at: dmgURL)
                     do {
                         try FileManager.default.moveItem(at: tempURL, to: dmgURL)
@@ -313,6 +338,10 @@ final class UpdateService: ObservableObject {
     /// writable by this user (standard account with the app in /Applications),
     /// the script runs through an admin prompt instead of failing silently.
     private func launchInstaller(dmgPath: String, offered: String?) {
+        guard let signingIdentity = trustedUpdateIdentity() else {
+            try? FileManager.default.removeItem(atPath: dmgPath)
+            return
+        }
         let appPath = Bundle.main.bundlePath
         let pid = ProcessInfo.processInfo.processIdentifier
         let fm = FileManager.default
@@ -331,22 +360,25 @@ final class UpdateService: ObservableObject {
         if fm.isWritableFile(atPath: appDirectory),
            !UpdateInstallerSupport.shouldForceAdminInstall(afterFailureCode: lastFailure) {
             launchUserInstaller(appPath: appPath, dmgPath: dmgPath, pid: pid,
-                                resultPath: resultURL.path, expectedVersion: expectedVersion)
+                                resultPath: resultURL.path, expectedVersion: expectedVersion,
+                                signingIdentity: signingIdentity)
         } else {
             // Either the folder is not writable, or the last attempt died at
             // the copy/swap step: retry with admin rights instead of failing
             // the same way twice.
             launchAdminInstaller(appPath: appPath, dmgPath: dmgPath, pid: pid,
-                                 resultPath: resultURL.path, expectedVersion: expectedVersion)
+                                 resultPath: resultURL.path, expectedVersion: expectedVersion,
+                                 signingIdentity: signingIdentity)
         }
     }
 
     private func launchUserInstaller(appPath: String, dmgPath: String, pid: Int32,
-                                     resultPath: String, expectedVersion: String) {
+                                     resultPath: String, expectedVersion: String,
+                                     signingIdentity: UpdateInstallerSupport.SigningIdentity) {
         let scriptURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("vorssaint-update-\(pid)-\(UUID().uuidString).sh")
         do {
-            try UpdateInstallerSupport.installerScript()
+            try UpdateInstallerSupport.installerScript(signingIdentity: signingIdentity)
                 .write(to: scriptURL, atomically: true, encoding: .utf8)
         } catch {
             failInstall(dmgPath: dmgPath, message: error.localizedDescription)
@@ -377,13 +409,15 @@ final class UpdateService: ObservableObject {
     /// its own session so the prompt returns while the installer waits for our
     /// exit — and so it survives that exit.
     private func launchAdminInstaller(appPath: String, dmgPath: String, pid: Int32,
-                                      resultPath: String, expectedVersion: String) {
+                                      resultPath: String, expectedVersion: String,
+                                      signingIdentity: UpdateInstallerSupport.SigningIdentity) {
         let command = UpdateInstallerSupport.elevatedInstallCommand(appPath: appPath,
                                                                     dmgPath: dmgPath,
                                                                     pid: pid,
                                                                     resultPath: resultPath,
                                                                     uid: getuid(),
-                                                                    expectedVersion: expectedVersion)
+                                                                    expectedVersion: expectedVersion,
+                                                                    signingIdentity: signingIdentity)
         // The in-process authorization holds the main thread until it is
         // answered, and the system dialog never appears while the Extra
         // Brightness overlay is on screen (#1917). Once the request waits,
