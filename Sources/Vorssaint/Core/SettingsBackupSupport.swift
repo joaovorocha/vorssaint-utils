@@ -99,6 +99,9 @@ enum SettingsBackupSupport {
     /// out by construction (they are not preference keys), listed here only
     /// when they would otherwise slip in through the registered set.
     static let machineStateKeys: Set<String> = [
+        // A gateway address and consent to contact it belong to this network.
+        DefaultsKey.tMobileGatewayAddress,
+        DefaultsKey.monitorNetTMobile,
         DefaultsKey.displaysSwitchedOff,
         DefaultsKey.displaysSwitchedOffFingerprints,
         DefaultsKey.dockPreviewRestoreAutohide,
