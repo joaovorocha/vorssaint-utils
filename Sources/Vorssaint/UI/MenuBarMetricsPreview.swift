@@ -8,6 +8,7 @@ import SwiftUI
 /// visual cost before they occupy the actual menu bar.
 struct MenuBarMetricsPreview: View {
     @ObservedObject private var monitor = SystemMonitor.shared
+    @ObservedObject private var gateway = TMobileGatewayMonitor.shared.service
     @AppStorage(DefaultsKey.menuBarCPU) private var cpu = false
     @AppStorage(DefaultsKey.menuBarGPU) private var gpu = false
     @AppStorage(DefaultsKey.menuBarMemory) private var memory = false
@@ -15,6 +16,20 @@ struct MenuBarMetricsPreview: View {
     @AppStorage(DefaultsKey.menuBarGPUTemperature) private var gpuTemperature = false
     @AppStorage(DefaultsKey.menuBarBatteryTemperature) private var batteryTemperature = false
     @AppStorage(DefaultsKey.menuBarNetwork) private var network = false
+    @AppStorage(DefaultsKey.menuBarTMobileLTE) private var gatewayLTE = false
+    @AppStorage(DefaultsKey.menuBarTMobile5G) private var gateway5G = false
+    @AppStorage(DefaultsKey.menuBarTMobileLTEBands) private var gatewayLTEBands = false
+    @AppStorage(DefaultsKey.menuBarTMobile5GBands) private var gateway5GBands = false
+    @AppStorage(DefaultsKey.menuBarTMobileLTERSRP) private var gatewayLTERSRP = false
+    @AppStorage(DefaultsKey.menuBarTMobile5GRSRP) private var gateway5GRSRP = false
+    @AppStorage(DefaultsKey.menuBarTMobileLTERSINR) private var gatewayLTERSINR = false
+    @AppStorage(DefaultsKey.menuBarTMobile5GSINR) private var gateway5GSINR = false
+    @AppStorage(DefaultsKey.menuBarTMobileLTERSRQ) private var gatewayLTERSRQ = false
+    @AppStorage(DefaultsKey.menuBarTMobile5GRSRQ) private var gateway5GRSRQ = false
+    @AppStorage(DefaultsKey.menuBarTMobileLTERSSI) private var gatewayLTERSSI = false
+    @AppStorage(DefaultsKey.menuBarTMobile5GRSSI) private var gateway5GRSSI = false
+    @AppStorage(DefaultsKey.tMobileLTEMenuBarSignalStyle) private var gatewayLTESignalStyle = "bars"
+    @AppStorage(DefaultsKey.tMobile5GMenuBarSignalStyle) private var gateway5GSignalStyle = "bars"
     @AppStorage(DefaultsKey.menuBarDiskUsage) private var diskUsage = false
     @AppStorage(DiskMenuBarStyle.defaultsKey) private var diskStyle = DiskMenuBarStyle.percent
     @AppStorage(DefaultsKey.menuBarDiskActivity) private var diskActivity = false
@@ -43,6 +58,8 @@ struct MenuBarMetricsPreview: View {
     @ObservedObject private var l10n = L10n.shared
 
     var body: some View {
+        let _ = gatewayLTESignalStyle
+        let _ = gateway5GSignalStyle
         let _ = metricOrder
         let _ = combineTemperatures
         let _ = metricAppearance
@@ -59,12 +76,12 @@ struct MenuBarMetricsPreview: View {
         let _ = networkSpeedUnit
         let _ = metricSpacing
         let metrics = activeMetrics
-        let lines = separateMetrics ? [] : MenuBarRenderer.lines(for: monitor.snapshot, metrics: metrics)
+        let lines = separateMetrics ? [] : MenuBarRenderer.lines(for: monitor.snapshot, metrics: metrics, gatewaySnapshot: gateway.snapshot)
         // Separate items are their own status items, which macOS seats to
         // the left of the one that was there first.
         let items = separateMetrics
             ? StatusItemController.metricStatusGroups(for: metrics, strings: l10n.s)
-                .map { MenuBarRenderer.lines(for: monitor.snapshot, metrics: $0.metrics) }
+                .map { MenuBarRenderer.lines(for: monitor.snapshot, metrics: $0.metrics, gatewaySnapshot: gateway.snapshot) }
                 .filter { !$0.isEmpty }
             : []
         // The steady state of the hide option: a pending update, a running
@@ -128,6 +145,18 @@ struct MenuBarMetricsPreview: View {
         let _ = gpuTemperature
         let _ = batteryTemperature
         let _ = network
+        let _ = gatewayLTE
+        let _ = gateway5G
+        let _ = gatewayLTEBands
+        let _ = gateway5GBands
+        let _ = gatewayLTERSRP
+        let _ = gateway5GRSRP
+        let _ = gatewayLTERSINR
+        let _ = gateway5GSINR
+        let _ = gatewayLTERSRQ
+        let _ = gateway5GRSRQ
+        let _ = gatewayLTERSSI
+        let _ = gateway5GRSSI
         let _ = diskUsage
         let _ = diskActivity
         let _ = battery

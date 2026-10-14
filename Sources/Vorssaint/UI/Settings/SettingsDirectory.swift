@@ -216,7 +216,8 @@ enum SettingsDirectory {
                                        keywords: [s.menuBarSpacingLabel, s.menuBarHideIconToggle],
                                        featureKeywords: [
                                         (.monitorMemory, [s.monitorMemoryPressureDot]),
-                                        (.monitorNetwork, [FeatureStrings.monitorLayout(language).networkSpeedUnit]),
+                                        (.monitorNetwork, [FeatureStrings.monitorLayout(language).networkSpeedUnit,
+                                                           "T-Mobile gateway", "5G signal", "LTE signal", "n41 bands", "Tower map", "Signal history"]),
                                         (.fanControl, [FeatureStrings.fanControl(language).menuBarTitle]),
                                        ]),
             ]),

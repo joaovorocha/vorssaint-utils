@@ -13,16 +13,34 @@ enum TMobileGatewayPhase: Equatable {
     case failed(TMobileGatewayFailure)
 }
 
-struct TMobileRadioSignal: Equatable {
+struct TMobileRadioSignal: Equatable, Codable {
     let bars: Int?
     let bands: [String]
     let rsrp: Double?
     let rsrq: Double?
     let rssi: Double?
     let sinr: Double?
+    let cellID: UInt64?
+    let antenna: String?
+    let bandwidthMHz: Double?
+    let channel: Int?
+    let physicalCellID: Int?
+    let trackingAreaCode: UInt32?
+    let cqi: Int?
+    let gNodeBID: UInt32?
+
+    init(bars: Int?, bands: [String], rsrp: Double?, rsrq: Double?, rssi: Double?, sinr: Double?,
+         cellID: UInt64? = nil, antenna: String? = nil, bandwidthMHz: Double? = nil,
+         channel: Int? = nil, physicalCellID: Int? = nil, trackingAreaCode: UInt32? = nil,
+         cqi: Int? = nil, gNodeBID: UInt32? = nil) {
+        self.bars = bars; self.bands = bands; self.rsrp = rsrp; self.rsrq = rsrq
+        self.rssi = rssi; self.sinr = sinr; self.cellID = cellID; self.antenna = antenna
+        self.bandwidthMHz = bandwidthMHz; self.channel = channel; self.physicalCellID = physicalCellID
+        self.trackingAreaCode = trackingAreaCode; self.cqi = cqi; self.gNodeBID = gNodeBID
+    }
 }
 
-struct TMobileGatewaySnapshot: Equatable {
+struct TMobileGatewaySnapshot: Equatable, Codable {
     let model: String?
     let firmware: String?
     let uptime: TimeInterval?
@@ -30,6 +48,14 @@ struct TMobileGatewaySnapshot: Equatable {
     let roaming: Bool?
     let lte: TMobileRadioSignal?
     let fiveG: TMobileRadioSignal?
+    let apn: String?
+
+    init(model: String?, firmware: String?, uptime: TimeInterval?, registration: String?, roaming: Bool?,
+         lte: TMobileRadioSignal?, fiveG: TMobileRadioSignal?, apn: String? = nil) {
+        self.model = model; self.firmware = firmware; self.uptime = uptime
+        self.registration = registration; self.roaming = roaming
+        self.lte = lte; self.fiveG = fiveG; self.apn = apn
+    }
 
     var primaryRadioLabel: String? {
         if fiveG?.rsrp != nil { return "5G" }
@@ -38,7 +64,9 @@ struct TMobileGatewaySnapshot: Equatable {
     }
 }
 
-/// Only the gateway's documented public status fields cross this boundary.
+/// Only allowlisted radio/status fields cross this boundary. Optional cell
+/// details are retained only when returned by the same public status request;
+/// their absence never triggers an authenticated telemetry request.
 /// Credentials, client identifiers, SIM information and GPS are never retained.
 enum TMobileGatewaySupport {
     static func privateLANBaseURL(_ input: String) -> URL? {
@@ -93,25 +121,121 @@ enum TMobileGatewaySupport {
             uptime: uptime.flatMap { $0 >= 0 ? $0 : nil },
             registration: text(generic["registration"]),
             roaming: boolean(generic["roaming"]),
-            lte: radio(signal["4g"]), fiveG: radio(signal["5g"]))
+            lte: radio(signal["4g"], isFiveG: false), fiveG: radio(signal["5g"], isFiveG: true),
+            apn: text(generic["apn"]))
     }
 
     static func pollingDelay(errorStreak: Int) -> TimeInterval {
         errorStreak <= 0 ? 15 : min(15 * pow(2, Double(min(errorStreak, 3))), 120)
     }
 
-    private static func radio(_ value: Any?) -> TMobileRadioSignal? {
+    /// Codable is a storage format, not a trust boundary. Apply the same limits
+    /// when recording or loading a locally edited/corrupt history archive.
+    static func isValidSnapshot(_ snapshot: TMobileGatewaySnapshot) -> Bool {
+        [snapshot.model, snapshot.firmware, snapshot.registration, snapshot.apn].allSatisfy {
+            optional($0) { text($0) == $0 }
+        } && optional(snapshot.uptime) { $0.isFinite && $0 >= 0 }
+            && optional(snapshot.lte) { validRadio($0, isFiveG: false) }
+            && optional(snapshot.fiveG) { validRadio($0, isFiveG: true) }
+    }
+
+    private static func validRadio(_ radio: TMobileRadioSignal, isFiveG: Bool) -> Bool {
+        guard radio.bands.count <= 32, Set(radio.bands).count == radio.bands.count,
+              radio.bands.allSatisfy({ band($0, isFiveG: isFiveG) == $0 }),
+              optional(radio.bars, { (0...5).contains($0) }),
+              optional(radio.rsrp, { $0.isFinite && (-160 ... -20).contains($0) }),
+              optional(radio.rsrq, { $0.isFinite && (-50 ... 0).contains($0) }),
+              optional(radio.rssi, { $0.isFinite && (-160 ... 0).contains($0) }),
+              optional(radio.sinr, { $0.isFinite && (-40 ... 80).contains($0) }),
+              optional(radio.cellID, { $0 <= (isFiveG ? 0xFFFFFFFFF : 0xFFFFFFF) }),
+              optional(radio.antenna, { ["Internal", "External"].contains($0) }),
+              optional(radio.bandwidthMHz, { $0.isFinite && $0 > 0 && $0 <= 400 }),
+              optional(radio.channel, { (0...(isFiveG ? 3_279_165 : 262_143)).contains($0) }),
+              optional(radio.physicalCellID, { (0...(isFiveG ? 1007 : 503)).contains($0) }),
+              optional(radio.trackingAreaCode, { $0 <= (isFiveG ? 0xFFFFFF : 0xFFFF) }),
+              optional(radio.cqi, { (0...30).contains($0) }),
+              isFiveG || radio.gNodeBID == nil else { return false }
+        return radio.bars != nil || !radio.bands.isEmpty || radio.rsrp != nil || radio.rsrq != nil
+            || radio.rssi != nil || radio.sinr != nil || radio.cellID != nil || radio.antenna != nil
+            || radio.bandwidthMHz != nil || radio.channel != nil || radio.physicalCellID != nil
+            || radio.trackingAreaCode != nil || radio.cqi != nil || radio.gNodeBID != nil
+    }
+
+    private static func optional<T>(_ value: T?, _ predicate: (T) -> Bool) -> Bool {
+        value.map(predicate) ?? true
+    }
+
+    private static func radio(_ value: Any?, isFiveG: Bool) -> TMobileRadioSignal? {
         guard let object = value as? [String: Any] else { return nil }
+        let sector = object["sector"] as? [String: Any] ?? [:]
         let barValue = number(object["bars"])
         let bars = barValue.flatMap { (0...5).contains($0) ? Int($0.rounded()) : nil }
-        let bands: [String]
-        if let array = object["bands"] as? [Any] { bands = array.compactMap(text) }
-        else { bands = text(object["bands"]).map { [$0] } ?? [] }
-        let rsrp = number(object["rsrp"]), rsrq = number(object["rsrq"])
-        let rssi = number(object["rssi"]), sinr = number(object["sinr"])
+        let rawBands = (object["bands"] as? [Any]) ?? object["bands"].map { [$0] } ?? []
+        var bands: [String] = []
+        for value in rawBands.prefix(32) {
+            guard let candidate = band(value, isFiveG: isFiveG), !bands.contains(candidate) else { continue }
+            bands.append(candidate)
+        }
+        // Deliberately broad LTE/NR sanity limits reject sentinels such as
+        // zero RSRP and 99 SINR without treating a weak but real link as absent.
+        let rsrp = measurement(object["rsrp"], range: -160 ... -20)
+        let rsrq = measurement(object["rsrq"], range: -50 ... 0)
+        let rssi = measurement(object["rssi"], range: -160 ... 0)
+        let sinr = measurement(object["sinr"], range: -40 ... 80)
+        let cellID = integer(object["cid"] ?? sector["cid"], maximum: isFiveG ? 0xFFFFFFFFF : 0xFFFFFFF)
+        let antenna = text(object["antennaUsed"]).flatMap {
+            ["internal": "Internal", "external": "External"][$0.lowercased()]
+        }
+        let bandwidth = bandwidth(object["bandwidth"])
+        let channel = integer(object["earfcn"] ?? object["arfcn"] ?? object["nrarfcn"],
+                              maximum: isFiveG ? 3_279_165 : 262_143).map(Int.init)
+        let pci = integer(object["pci"], maximum: isFiveG ? 1007 : 503).map(Int.init)
+        let tac = integer(object["tac"], maximum: isFiveG ? 0xFFFFFF : 0xFFFF).map(UInt32.init)
+        let cqi = integer(object["cqi"], maximum: 30).map(Int.init)
+        let gNodeBID = isFiveG
+            ? integer(object["gNBID"] ?? sector["gNBID"], maximum: UInt64(UInt32.max)).map(UInt32.init) : nil
         guard bars != nil || !bands.isEmpty || rsrp != nil || rsrq != nil || rssi != nil || sinr != nil
+            || cellID != nil || antenna != nil || bandwidth != nil || channel != nil || pci != nil
+            || tac != nil || cqi != nil || gNodeBID != nil
         else { return nil }
-        return TMobileRadioSignal(bars: bars, bands: bands, rsrp: rsrp, rsrq: rsrq, rssi: rssi, sinr: sinr)
+        return TMobileRadioSignal(bars: bars, bands: bands, rsrp: rsrp, rsrq: rsrq, rssi: rssi, sinr: sinr,
+                                  cellID: cellID, antenna: antenna, bandwidthMHz: bandwidth, channel: channel,
+                                  physicalCellID: pci, trackingAreaCode: tac, cqi: cqi, gNodeBID: gNodeBID)
+    }
+
+    private static func band(_ value: Any?, isFiveG: Bool) -> String? {
+        guard let candidate = text(value)?.lowercased(), candidate.first == (isFiveG ? "n" : "b") else { return nil }
+        let digits = candidate.dropFirst()
+        guard (1...3).contains(digits.count), digits.first != "0",
+              digits.utf8.allSatisfy({ (48...57).contains($0) }),
+              let number = Int(digits), (1...512).contains(number) else { return nil }
+        return candidate
+    }
+
+    /// Parse identifiers as integers, never via Double or a rounded measurement.
+    private static func integer(_ value: Any?, maximum: UInt64) -> UInt64? {
+        let digits: String
+        if let number = value as? NSNumber {
+            guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+            digits = number.stringValue
+        } else if let string = value as? String {
+            digits = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else { return nil }
+        guard !digits.isEmpty, digits.count <= 20, digits.utf8.allSatisfy({ (48...57).contains($0) }),
+              let integer = UInt64(digits), integer <= maximum else { return nil }
+        return integer
+    }
+
+    private static func measurement(_ value: Any?, range: ClosedRange<Double>) -> Double? {
+        number(value).flatMap { range.contains($0) ? $0 : nil }
+    }
+
+    private static func bandwidth(_ value: Any?) -> Double? {
+        let raw: Any?
+        if let string = value as? String, string.lowercased().hasSuffix("mhz") {
+            raw = String(string.dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else { raw = value }
+        return number(raw).flatMap { $0 > 0 && $0 <= 400 ? $0 : nil }
     }
 
     private static func text(_ value: Any?) -> String? {

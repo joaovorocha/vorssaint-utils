@@ -7,9 +7,123 @@ enum TMobileGatewayTests {
     static func run(_ suite: TestSuite) {
         addresses(suite)
         parsing(suite)
+        radioDetails(suite)
+        diagnostics(suite)
         suite.expect((0...5).map { TMobileGatewaySupport.pollingDelay(errorStreak: $0) }
                      == [15, 30, 60, 120, 120, 120], "gateway polling backs off with a 120-second limit")
         MainActor.assumeIsolated { transport(suite) }
+    }
+
+    private static func radioDetails(_ suite: TestSuite) {
+        let fixture = #"{"signal":{"4g":{"bars":2,"bands":[" B66 ","b66","n41","b0","b999","b2"],"cid":268435455,"antennaUsed":"internal","bandwidth":"20 MHz","earfcn":"1234","pci":503,"tac":65535,"cqi":15,"gNBID":123},"5g":{"bars":3,"bands":["N41","n71"],"cid":"68719476735","antennaUsed":"External","bandwidth":100,"nrarfcn":520000,"pci":1007,"tac":16777215,"cqi":30,"sector":{"gNBID":"4294967295"}},"generic":{"apn":"fast.t-mobile.com"}},"sim":{"imsi":"private-id"},"gps":{"latitude":1,"longitude":2}}"#
+        let parsed = try? TMobileGatewaySupport.parse(Data(fixture.utf8))
+        suite.expect(parsed?.lte?.bands == ["b66", "b2"] && parsed?.fiveG?.bands == ["n41", "n71"],
+                     "band normalization deduplicates and rejects a wrong radio prefix or malformed band")
+        suite.expect(parsed?.lte?.cellID == 268_435_455 && parsed?.fiveG?.cellID == 68_719_476_735,
+                     "LTE 28-bit and NR 36-bit cell IDs retain exact integer precision")
+        suite.expect(parsed?.lte?.antenna == "Internal" && parsed?.fiveG?.antenna == "External"
+                     && parsed?.apn == "fast.t-mobile.com", "only known antenna values and the public APN are retained")
+        suite.expect(parsed?.lte?.bandwidthMHz == 20 && parsed?.fiveG?.bandwidthMHz == 100
+                     && parsed?.lte?.channel == 1234 && parsed?.fiveG?.channel == 520_000,
+                     "optional channel and bandwidth fields decode only when supplied")
+        suite.expect(parsed?.lte?.physicalCellID == 503 && parsed?.fiveG?.physicalCellID == 1007
+                     && parsed?.lte?.trackingAreaCode == 65_535 && parsed?.fiveG?.trackingAreaCode == 16_777_215,
+                     "PCI and TAC limits distinguish LTE from NR")
+        suite.expect(parsed?.lte?.gNodeBID == nil && parsed?.fiveG?.gNodeBID == UInt32.max
+                     && parsed?.lte?.cqi == 15 && parsed?.fiveG?.cqi == 30,
+                     "gNB IDs are explicit 5G fields rather than an LTE cell calculation")
+        if let parsed, let encoded = try? JSONEncoder().encode(parsed) {
+            suite.expect((try? JSONDecoder().decode(TMobileGatewaySnapshot.self, from: encoded)) == parsed,
+                         "normalized snapshots round-trip for local history")
+            let serialized = String(decoding: encoded, as: UTF8.self)
+            suite.expect(!serialized.contains("private-id") && !serialized.contains("latitude")
+                         && !serialized.contains("longitude"), "history encoding cannot preserve excluded raw fields")
+        } else { suite.expect(false, "a valid gateway snapshot encodes") }
+
+        let malformed = #"{"signal":{"4g":{"bands":["b2"],"cid":268435456,"pci":504,"tac":65536,"earfcn":262144,"cqi":31,"bandwidth":401,"antennaUsed":"unknown","rsrp":0,"rsrq":5,"rssi":99,"sinr":99},"5g":{"bands":["n41"],"cid":"68719476736","pci":1008,"tac":16777216,"nrarfcn":3279166,"cqi":-1,"bandwidth":0,"gNBID":"4294967296"}}}"#
+        let rejected = try? TMobileGatewaySupport.parse(Data(malformed.utf8))
+        for radio in [rejected?.lte, rejected?.fiveG] {
+            suite.expect(radio?.cellID == nil && radio?.physicalCellID == nil && radio?.trackingAreaCode == nil
+                         && radio?.channel == nil && radio?.cqi == nil && radio?.gNodeBID == nil
+                         && radio?.bandwidthMHz == nil, "out-of-range radio identifiers and channel fields stay unavailable")
+        }
+        suite.expect(rejected?.lte?.antenna == nil && rejected?.lte?.rsrp == nil && rejected?.lte?.rsrq == nil
+                     && rejected?.lte?.rssi == nil && rejected?.lte?.sinr == nil,
+                     "unknown antenna modes and impossible measurement sentinels are not displayed as real readings")
+        for value in ["true", "false", "-1", "1.5", #""1.5""#, #""1e3""#, #""NaN""#,
+                      #""18446744073709551616""#] {
+            let data = Data("{\"signal\":{\"5g\":{\"bands\":[\"n41\"],\"cid\":\(value),\"pci\":\(value)}}}".utf8)
+            let snapshot = try? TMobileGatewaySupport.parse(data)
+            suite.expect(snapshot?.fiveG?.cellID == nil && snapshot?.fiveG?.physicalCellID == nil,
+                         "cell identifiers reject booleans, fractions, signs, exponent strings and overflow: \(value)")
+        }
+        let only5GID = try? TMobileGatewaySupport.parse(Data(#"{"signal":{"5g":{"cid":12345}}}"#.utf8))
+        suite.expect(only5GID?.fiveG?.cellID == 12345 && only5GID?.fiveG?.gNodeBID == nil,
+                     "a 5G cell ID is retained without inventing a gNB ID")
+        let oldHistory = Data(#"{"model":"TMO-G4AR","lte":{"bars":2,"bands":["b2"],"rsrp":-101}}"#.utf8)
+        let decoded = try? JSONDecoder().decode(TMobileGatewaySnapshot.self, from: oldHistory)
+        suite.expect(decoded?.lte?.rsrp == -101 && decoded?.lte?.cellID == nil && decoded?.apn == nil,
+                     "history decoding tolerates absent optional radio details")
+        suite.expect(parsed.map(TMobileGatewaySupport.isValidSnapshot) == true
+                     && decoded.map(TMobileGatewaySupport.isValidSnapshot) == true,
+                     "normalized and older valid history snapshots pass the archive validation boundary")
+        for invalid in ["[]", "{", #"{"lte":{"bars":true,"bands":["b2"]}}"#,
+                        #"{"fiveG":{"bands":["n41"],"cellID":-1}}"#,
+                        #"{"fiveG":{"bands":["n41"],"gNodeBID":4294967296}}"#,
+                        #"{"fiveG":{"bands":["n41"],"sinr":"Infinity"}}"#] {
+            suite.expect((try? JSONDecoder().decode(TMobileGatewaySnapshot.self, from: Data(invalid.utf8))) == nil,
+                         "malformed archive types, truncation and unsigned overflow are rejected")
+        }
+        for invalid in [#"{"uptime":-1}"#, #"{"model":"  unnormalized  "}"#,
+                        #"{"lte":{"bars":6,"bands":["b2"]}}"#,
+                        #"{"lte":{"bands":["n41"]}}"#, #"{"fiveG":{"bands":["n41","n41"]}}"#,
+                        #"{"fiveG":{"bands":["n41"],"rsrp":0}}"#,
+                        #"{"fiveG":{"bands":["n41"],"physicalCellID":1008}}"#,
+                        #"{"lte":{"bands":["b2"],"gNodeBID":123}}"#] {
+            let edited = try? JSONDecoder().decode(TMobileGatewaySnapshot.self, from: Data(invalid.utf8))
+            suite.expect(edited.map(TMobileGatewaySupport.isValidSnapshot) == false,
+                         "type-correct but invalid edited archives fail range and normalized-text validation")
+        }
+    }
+
+    private static func diagnostics(_ suite: TestSuite) {
+        suite.expect(TMobileGatewayDiagnostics.quality(for: nil, metric: .rsrp) == .unknown
+                     && TMobileGatewayDiagnostics.quality(for: .nan, metric: .sinr) == .unknown
+                     && TMobileGatewayDiagnostics.quality(for: 0, metric: .rsrp) == .unknown,
+                     "quality guidance does not turn missing or impossible readings into a grade")
+        suite.expect([-106.0, -105, -95, -85].map { TMobileGatewayDiagnostics.quality(for: $0, metric: .rsrp) }
+                     == [.poor, .fair, .good, .excellent], "RSRP guidance has explicit boundary behavior")
+        suite.expect([-16.0, -15, -10, -7].map { TMobileGatewayDiagnostics.quality(for: $0, metric: .rsrq) }
+                     == [.poor, .fair, .good, .excellent], "RSRQ guidance has explicit boundary behavior")
+        suite.expect([-1.0, 0, 13, 20].map { TMobileGatewayDiagnostics.quality(for: $0, metric: .sinr) }
+                     == [.poor, .fair, .good, .excellent], "SINR guidance distinguishes interference-dominated readings")
+        suite.expect(TMobileGatewayDiagnostics.quality(for: -55, metric: .rssi) == .unknown,
+                     "RSSI alone does not manufacture a bandwidth-independent quality grade")
+        suite.expect(TMobileGatewayDiagnostics.lteENodeBID(cellID: 12_345 * 256 + 7) == 12_345
+                     && TMobileGatewayDiagnostics.lteSectorID(cellID: 12_345 * 256 + 7) == 7,
+                     "conventional LTE macro estimate preserves the separate eight-bit local cell")
+        suite.expect(TMobileGatewayDiagnostics.lteENodeBID(cellID: 68_719_476_735) == nil
+                     && TMobileGatewayDiagnostics.lteSectorID(cellID: 268_435_456) == nil,
+                     "LTE estimate rejects IDs outside the LTE range instead of truncating NR data")
+        suite.expect(TMobileGatewayDiagnostics.bandDescription("N41")?.contains("2.5 GHz") == true
+                     && TMobileGatewayDiagnostics.bandDescription("n71")?.contains("600 MHz") == true
+                     && TMobileGatewayDiagnostics.bandDescription("n99") == nil,
+                     "known bands have sourced context while unknown bands get no guessed frequency")
+        let weak = TMobileGatewaySnapshot(model: nil, firmware: nil, uptime: nil, registration: nil, roaming: false,
+                                         lte: TMobileRadioSignal(bars: 5, bands: ["b66"], rsrp: -118,
+                                                                rsrq: -18, rssi: -60, sinr: -2), fiveG: nil)
+        let tips = TMobileGatewayDiagnostics.tips(for: weak)
+        suite.expect(tips.contains { $0.contains("higher shelf") }
+                     && tips.contains { $0.contains("Interference") }
+                     && tips.contains { $0.contains("does not prove a 5G outage") },
+                     "tips explain weak power, interference and missing 5G without using bars as speed")
+        let fiveG = TMobileGatewaySnapshot(model: nil, firmware: nil, uptime: nil, registration: nil, roaming: false,
+                                          lte: weak.lte, fiveG: TMobileRadioSignal(bars: 1, bands: ["n41"],
+                                                                                 rsrp: -80, rsrq: -6, rssi: -55, sinr: 25))
+        let fiveGTips = TMobileGatewayDiagnostics.tips(for: fiveG)
+        suite.expect(!fiveGTips.contains { $0.contains("higher shelf") }
+                     && fiveGTips.contains { $0.contains("band name does not predict") },
+                     "tips use available 5G measurements and avoid promising band-based performance")
     }
 
     private static func addresses(_ suite: TestSuite) {

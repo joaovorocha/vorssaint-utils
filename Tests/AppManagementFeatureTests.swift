@@ -1168,11 +1168,15 @@ enum AppManagementFeatureTests {
         suite.expect(Defaults.sanitizedMenuBarMemoryStyle("bad") == "percent", "invalid memory style falls back to percent")
         suite.expect(Defaults.sanitizedMenuBarMetricOrder("cpu,gpu,memory,network,battery,power")
                == ["cpu", "gpu", "memory", "network", "battery", "power",
-                   "cpuTemperature", "gpuTemperature", "batteryTime", "batteryTemperature", "peripheralBattery", "diskUsage", "diskActivity", "connectedDevices", "fanSpeed"],
+                   "cpuTemperature", "gpuTemperature", "batteryTime", "batteryTemperature", "peripheralBattery",
+                   "tMobileLTE", "tMobile5G", "tMobileLTEBands", "tMobile5GBands", "tMobileLTERSRP", "tMobile5GRSRP", "tMobileLTERSINR", "tMobile5GSINR", "tMobileLTERSRQ", "tMobile5GRSRQ", "tMobileLTERSSI", "tMobile5GRSSI",
+                   "diskUsage", "diskActivity", "connectedDevices", "fanSpeed"],
                "menu bar metric order appends temperature sensors without rewriting existing saved order")
         suite.expect(Defaults.sanitizedMenuBarMetricOrder("temperature,cpu,cpu,bad")
                == ["cpuTemperature", "gpuTemperature", "batteryTemperature",
-                   "cpu", "gpu", "memory", "battery", "batteryTime", "peripheralBattery", "network", "diskUsage", "diskActivity", "connectedDevices", "power", "fanSpeed"],
+                   "cpu", "gpu", "memory", "battery", "batteryTime", "peripheralBattery", "network",
+                   "tMobileLTE", "tMobile5G", "tMobileLTEBands", "tMobile5GBands", "tMobileLTERSRP", "tMobile5GRSRP", "tMobileLTERSINR", "tMobile5GSINR", "tMobileLTERSRQ", "tMobile5GRSRQ", "tMobileLTERSSI", "tMobile5GRSSI",
+                   "diskUsage", "diskActivity", "connectedDevices", "power", "fanSpeed"],
                "menu bar metric order migrates the old generic temperature value")
         suite.expect(Defaults.sanitizedBundleIdentifierList([" com.example.One ", "", "com.example.One", "com.example.Two"])
                == ["com.example.One", "com.example.Two"],

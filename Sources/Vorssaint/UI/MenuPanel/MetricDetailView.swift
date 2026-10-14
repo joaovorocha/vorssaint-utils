@@ -102,7 +102,7 @@ extension MenuBarMetric {
             return .gpu
         case .memory:
             return .memory
-        case .network:
+        case .network, .tMobileLTE, .tMobile5G, .tMobileLTEBands, .tMobile5GBands, .tMobileLTERSRP, .tMobile5GRSRP, .tMobileLTERSINR, .tMobile5GSINR, .tMobileLTERSRQ, .tMobile5GRSRQ, .tMobileLTERSSI, .tMobile5GRSSI:
             return .network
         case .diskUsage, .diskActivity:
             return .disk
@@ -165,6 +165,9 @@ struct MetricDetailView: View {
             summaryCard
             detailCard
             if kind == .network {
+                if MenuBarMetric.enabled(in: .standard).contains(where: { $0.tMobileReading != nil }) {
+                    TMobileGatewayBlock(isVisible: .constant(true), editing: false).panelCard()
+                }
                 speedTestCard
             }
             if kind.processKind != nil {

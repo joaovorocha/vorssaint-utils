@@ -102,6 +102,11 @@ enum SettingsBackupSupport {
         // A gateway address and consent to contact it belong to this network.
         DefaultsKey.tMobileGatewayAddress,
         DefaultsKey.monitorNetTMobile,
+        // Pinned radio readings and recording are local network consent too.
+        "menuBarTMobileLTE", "menuBarTMobile5G", "menuBarTMobileLTEBands", "menuBarTMobile5GBands",
+        "menuBarTMobileLTERSRP", "menuBarTMobile5GRSRP", "menuBarTMobileLTERSINR", "menuBarTMobile5GSINR",
+        "menuBarTMobileLTERSRQ", "menuBarTMobile5GRSRQ", "menuBarTMobileLTERSSI", "menuBarTMobile5GRSSI",
+        "tMobileHistoryRecording",
         DefaultsKey.displaysSwitchedOff,
         DefaultsKey.displaysSwitchedOffFingerprints,
         DefaultsKey.dockPreviewRestoreAutohide,

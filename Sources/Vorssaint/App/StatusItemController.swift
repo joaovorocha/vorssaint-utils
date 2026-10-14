@@ -194,6 +194,15 @@ final class StatusItemController {
             .sink { [weak self] _ in self?.refresh() }
             .store(in: &cancellables)
 
+        // AppKit creates/binds this controller on the main thread. Confine
+        // the actor boundary here without changing the controller's API.
+        MainActor.assumeIsolated {
+            TMobileGatewayMonitor.shared.service.$snapshot
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in self?.refresh() }
+                .store(in: &cancellables)
+        }
+
         SystemMonitor.shared.$snapshot
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -281,7 +290,8 @@ final class StatusItemController {
         let defaults = UserDefaults.standard
         let interval = Defaults.sanitizedMonitorInterval(defaults.integer(forKey: DefaultsKey.monitorInterval))
         SystemMonitor.shared.setInterval(seconds: interval)
-        SystemMonitor.shared.setMenuBarActive(MenuBarMetric.anyEnabled(in: defaults))
+        SystemMonitor.shared.setMenuBarActive(MenuBarMetric.enabled(in: defaults).contains { $0.tMobileReading == nil })
+        MainActor.assumeIsolated { TMobileGatewayMonitor.shared.syncPreferences() }
     }
 
     private func syncTitleTimer(keepAwakeActive: Bool,
@@ -492,7 +502,8 @@ final class StatusItemController {
             let metricsTitle = MenuBarRenderer.attributed(for: snapshot,
                                                           metrics: metrics,
                                                           allowStacked: !includesCountdown,
-                                                          linePrefix: " ")
+                                                          linePrefix: " ",
+                                                          gatewaySnapshot: gatewaySnapshot)
             if metricsTitle.length > 0 {
                 if title.length > 0 { title.append(NSAttributedString(string: "  ")) }
                 title.append(metricsTitle)
@@ -562,6 +573,16 @@ final class StatusItemController {
             }
         }
 
+        let gatewayAccessibility = metrics.compactMap { metric -> String? in
+            guard let reading = metric.tMobileReading else { return nil }
+            return TMobileGatewayMenuBarSupport.display(reading,
+                snapshot: gatewaySnapshot,
+                signalStyle: defaultsSignalStyle(for: reading)).accessibilityValue
+        }.joined(separator: ", ")
+        let appName = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String) ?? "Vorssaint"
+        button.setAccessibilityLabel(gatewayAccessibility.isEmpty ? appName
+                                     : "\(appName), \(gatewayAccessibility)")
         let toolTip: String
         if manager.isActive {
             if manager.sessionTrigger == .automation {
@@ -575,9 +596,8 @@ final class StatusItemController {
         } else {
             toolTip = strings.statusIdleTooltip
         }
-        if button.toolTip != toolTip {
-            button.toolTip = toolTip
-        }
+        let fullToolTip = gatewayAccessibility.isEmpty ? toolTip : toolTip + "\n" + gatewayAccessibility
+        if button.toolTip != fullToolTip { button.toolTip = fullToolTip }
 
         // The icon decision depends on the title just written (the glyph may
         // hide only while metrics actually render), so it re-runs here — the
@@ -597,7 +617,8 @@ final class StatusItemController {
         for group in groups {
             let title = MenuBarRenderer.attributed(for: snapshot,
                                                    metrics: group.metrics,
-                                                   allowStacked: false)
+                                                   allowStacked: false,
+                                                   gatewaySnapshot: gatewaySnapshot)
             let empties = title.length > 0 ? 0 : (metricEmptyRenders[group.id] ?? 0) + 1
             metricEmptyRenders[group.id] = empties
             guard MenuBarSpacingSupport.keepsMetricStatusItem(
@@ -634,10 +655,26 @@ final class StatusItemController {
             if button.imagePosition != .noImage {
                 button.imagePosition = .noImage
             }
-            if button.toolTip != group.title {
-                button.toolTip = group.title
+            let readings = group.metrics.compactMap { metric -> String? in
+                guard let reading = metric.tMobileReading else { return nil }
+                return TMobileGatewayMenuBarSupport.display(reading,
+                    snapshot: gatewaySnapshot,
+                    signalStyle: defaultsSignalStyle(for: reading)).accessibilityValue
             }
+            let accessibleTitle = readings.isEmpty ? group.title : readings.joined(separator: ", ")
+            if button.toolTip != accessibleTitle { button.toolTip = accessibleTitle }
+            button.setAccessibilityLabel(accessibleTitle)
         }
+    }
+
+    /// Rendering is entered from AppKit callbacks, the main run loop or
+    /// publishers explicitly delivered to DispatchQueue.main.
+    private var gatewaySnapshot: TMobileGatewaySnapshot? {
+        MainActor.assumeIsolated { TMobileGatewayMonitor.shared.service.snapshot }
+    }
+
+    private func defaultsSignalStyle(for reading: TMobileGatewayMenuBarReading) -> String {
+        UserDefaults.standard.string(forKey: reading.signalStyleDefaultsKey) ?? "bars"
     }
 
     /// How the enabled metrics split into separate items. Static so the
@@ -688,7 +725,10 @@ final class StatusItemController {
                                      temperature: .batteryTemperature,
                                      primaryTitle: strings.batteryLabel)
             case .memory, .network, .diskUsage, .diskActivity, .batteryTime, .peripheralBattery, .power,
-                 .fanSpeed, .connectedDevices:
+                 .fanSpeed, .connectedDevices,
+                 .tMobileLTE, .tMobile5G, .tMobileLTEBands, .tMobile5GBands,
+                 .tMobileLTERSRP, .tMobile5GRSRP, .tMobileLTERSINR, .tMobile5GSINR,
+                 .tMobileLTERSRQ, .tMobile5GRSRQ, .tMobileLTERSSI, .tMobile5GRSSI:
                 let id = metric.rawValue
                 guard emittedIDs.insert(id).inserted else { continue }
                 groups.append(MetricStatusGroup(id: id,
