@@ -54,12 +54,23 @@ extension Notification.Name {
         monitor.syncPreferences()
         wait { service.phase == .ready }
         check(MonitorProtocol.count == 1 && recordings == 1, "enabled visible panel shares one successful snapshot")
+        monitor.setRadioWindowVisible(true)
+        monitor.setPanelVisible(false)
+        settle()
+        check(service.phase == .ready && MonitorProtocol.count == 1,
+              "standalone radio window retains the same reader when the dropdown closes")
+        monitor.setRadioWindowVisible(false)
+        check(service.phase == .idle && service.snapshot == nil,
+              "closing the last radio window clears live readings")
+        monitor.setPanelVisible(true)
+        wait { service.phase == .ready }
+        check(MonitorProtocol.count == 2, "reopening the panel resumes one shared reader")
         defaults.set(true, forKey: "menu")
         monitor.syncPreferences()
         monitor.setHistoryEnabled(true)
         monitor.syncPreferences()
         settle()
-        check(MonitorProtocol.count == 1, "adding menu bar and history consumers does not start duplicate requests")
+        check(MonitorProtocol.count == 2, "adding menu bar and history consumers does not start duplicate requests")
         monitor.setPanelVisible(false)
         check(service.phase == .ready, "closing panel retains demand from menu bar and history")
         defaults.set(false, forKey: "menu")
@@ -70,19 +81,21 @@ extension Notification.Name {
         defaults.set(true, forKey: "menu")
         monitor.syncPreferences()
         wait { service.phase == .ready }
-        check(MonitorProtocol.count == 2, "re-enabling a pin resumes the same reader")
+        check(MonitorProtocol.count == 3, "re-enabling a pin resumes the same reader")
+        monitor.setRadioWindowVisible(true)
         defaults.set(false, forKey: "networkAvailable")
         monitor.syncPreferences()
         check(service.phase == .idle && service.snapshot == nil, "removing network feature cancels all consumers")
+        monitor.setRadioWindowVisible(false)
         defaults.set(true, forKey: "networkAvailable")
         defaults.set("http://8.8.8.8", forKey: "address")
         monitor.syncPreferences()
         settle()
-        check(service.phase == .failed(.invalidAddress) && MonitorProtocol.count == 2,
+        check(service.phase == .failed(.invalidAddress) && MonitorProtocol.count == 3,
               "invalid origins do not open another request")
         defaults.set(false, forKey: "menu")
         monitor.syncPreferences()
-        print("PASS: 10 T-Mobile shared-reader lifecycle checks; every request intercepted locally")
+        print("PASS: 13 T-Mobile shared-reader lifecycle checks; every request intercepted locally")
     }
 
     private static func check(_ condition: @autoclosure () -> Bool, _ message: String) {

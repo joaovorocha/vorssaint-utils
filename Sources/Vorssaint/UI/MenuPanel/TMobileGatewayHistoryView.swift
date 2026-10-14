@@ -4,6 +4,8 @@ import Charts
 import UniformTypeIdentifiers
 
 struct TMobileGatewayHistoryView: View {
+    private let onDone: (() -> Void)?
+    private let showsHeader: Bool
     @ObservedObject private var store = TMobileGatewayHistoryStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var importing = false
@@ -13,18 +15,21 @@ struct TMobileGatewayHistoryView: View {
     @State private var useFiveG = true
     @State private var clearingHistory = false
     @State private var towerQuery = ""
+    init(onDone: (() -> Void)? = nil, showsHeader: Bool = true) { self.onDone = onDone; self.showsHeader = showsHeader }
     private var visibleTowers: [TMobileTowerPin] {
         store.towers.filter { towerQuery.isEmpty || $0.name.localizedCaseInsensitiveContains(towerQuery)
-            || $0.bands.localizedCaseInsensitiveContains(towerQuery) || ($0.cellID ?? "").localizedCaseInsensitiveContains(towerQuery) }
+            || $0.bands.localizedCaseInsensitiveContains(towerQuery) || ($0.cellID ?? "").localizedCaseInsensitiveContains(towerQuery)
+            || ($0.nodeID.map(String.init) ?? "").localizedCaseInsensitiveContains(towerQuery)
+            || ($0.ecgi ?? "").localizedCaseInsensitiveContains(towerQuery) }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
+            if showsHeader { HStack {
                 Text("T-Mobile history & towers").font(.title2.bold())
                 Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
-            }
+                Button("Done") { if let onDone { onDone() } else { dismiss() } }.keyboardShortcut(.cancelAction)
+            } }
             Toggle("Record local signal history", isOn: $store.isRecording)
             Text("Saves one sample per minute while Shadow Utilities is running. Keeps up to 7 days / 10,000 readings on this Mac. No GPS, online tower lookup or uploads.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -60,9 +65,9 @@ struct TMobileGatewayHistoryView: View {
                     Text("Offline coordinate map. Pins come from your file or manual entries. A nearby tower or matching label does not prove it is your connected tower.")
                         .font(.caption).foregroundStyle(.secondary)
                     TMobileOfflineTowerMap(towers: store.towers, samples: Array(store.samples.suffix(500)))
-                    Text("CSV columns: name,latitude,longitude,bands,cellID. JSON accepts an array of the same fields. Cell ID and bands are optional in JSON. Import adds pins; it does not replace existing pins.")
+                    Text("CSV columns: name,latitude,longitude,bands,cellID. Optional extra columns: radio (LTE or NR), nodeID, ecgi, provenance. JSON accepts an array of the same fields; only name and coordinates are required. Import adds pins to your existing list.")
                         .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                    TextField("Find a saved tower by name, band or cell ID", text: $towerQuery).textFieldStyle(.roundedBorder)
+                    TextField("Find a saved tower by name, band or identifier", text: $towerQuery).textFieldStyle(.roundedBorder)
                     if store.towers.count > 50 { Text("Showing the first 50 matching towers of \(store.towers.count) saved. Search to find another pin.").font(.caption) }
                     if let removed = store.removedTower { Button("Undo removal of \(removed.name)") { store.undoTowerRemoval() } }
                     if let coordinate = store.measurementCoordinate {
@@ -71,13 +76,21 @@ struct TMobileGatewayHistoryView: View {
                         Button("Stop tagging new readings") { store.measurementCoordinate = nil }
                     }
                     ForEach(visibleTowers.prefix(50)) { tower in
-                        HStack {
-                            Label(tower.name, systemImage: "antenna.radiowaves.left.and.right")
-                            Spacer()
-                            Text(tower.bands)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Label(tower.name, systemImage: "antenna.radiowaves.left.and.right")
+                                Spacer()
+                                Text(tower.bands)
+                                Button("Remove") { store.removeTower(tower) }.accessibilityLabel("Remove local tower \(tower.name)")
+                            }
+                            Text("Candidate · Location unverified · \(tower.provenance ?? "Local reference; source unspecified")").foregroundStyle(.secondary)
                             Text("\(tower.latitude.formatted()), \(tower.longitude.formatted())")
-                            if let cid = tower.cellID { Text("Cell \(cid)") }
-                            Button("Remove") { store.removeTower(tower) }.accessibilityLabel("Remove local tower \(tower.name)")
+                            HStack(spacing: 10) {
+                                if let radio = tower.radio { Text(radio.label) }
+                                if let node = tower.nodeID { Text("Node ID \(node)") }
+                                if let ecgi = tower.ecgi { Text("ECGI \(ecgi)") }
+                                if let cid = tower.cellID { Text("Legacy reference \(cid)") }
+                            }.monospacedDigit()
                         }.font(.caption).textSelection(.enabled)
                     }
                     if !store.samples.isEmpty {
@@ -127,6 +140,15 @@ private struct TMobileCoordinateEditor: View {
     @State private var longitude = ""
     @State private var bands = ""
     @State private var cellID = ""
+    @State private var radio: TMobileTowerRadio?
+    @State private var nodeID = ""
+    @State private var ecgi = ""
+    @State private var provenance = "Manual entry"
+    private var parsedNodeID: UInt32? {
+        guard !nodeID.isEmpty, nodeID.utf8.allSatisfy({ (48...57).contains($0) }) else { return nil }
+        guard let value = UInt32(nodeID), radio != .lte || value <= 0x0FFF_FFFF else { return nil }
+        return value
+    }
     private var coordinate: TMobileMapCoordinate? {
         guard let lat = Double(latitude), let lon = Double(longitude) else { return nil }
         let value = TMobileMapCoordinate(latitude: lat, longitude: lon)
@@ -134,7 +156,12 @@ private struct TMobileCoordinateEditor: View {
     }
     private var pin: TMobileTowerPin? {
         guard let coordinate else { return nil }
-        let pin = TMobileTowerPin(name: name.trimmingCharacters(in: .whitespacesAndNewlines), latitude: coordinate.latitude, longitude: coordinate.longitude, bands: bands, cellID: cellID.isEmpty ? nil : cellID)
+        guard nodeID.isEmpty || parsedNodeID != nil else { return nil }
+        let pin = TMobileTowerPin(name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                 latitude: coordinate.latitude, longitude: coordinate.longitude,
+                                 bands: bands, cellID: cellID.isEmpty ? nil : cellID, radio: radio,
+                                 nodeID: parsedNodeID, ecgi: ecgi.isEmpty ? nil : ecgi,
+                                 provenance: provenance.isEmpty ? nil : provenance)
         return pin.isValid ? pin : nil
     }
     var body: some View {
@@ -146,6 +173,17 @@ private struct TMobileCoordinateEditor: View {
             if !measurement {
                 TextField("Bands (optional, e.g. n41, B66)", text: $bands)
                 TextField("Cell ID reference (optional)", text: $cellID)
+                Picker("Radio (optional)", selection: $radio) {
+                    Text("Unspecified").tag(TMobileTowerRadio?.none)
+                    ForEach(TMobileTowerRadio.allCases, id: \.self) { Text($0.label).tag(Optional($0)) }
+                }
+                TextField("\(radio?.nodeLabel ?? "Node ID") (optional decimal number)", text: $nodeID)
+                TextField("ECGI (optional reported decimal/hex text)", text: $ecgi)
+                TextField("Source / provenance (optional)", text: $provenance)
+                Text("Select LTE or NR to compare explicit identifiers. Legacy Cell ID and bands remain reference labels. Location stays unverified.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if !nodeID.isEmpty && parsedNodeID == nil { Text("Node ID must be a whole number from 0 to \(radio == .lte ? "268,435,455" : "4,294,967,295").").font(.caption) }
+                if !ecgi.isEmpty && TMobileTowerReferenceSupport.canonicalECGI(ecgi) == nil { Text("Enter the reported decimal/hex identity text, up to 64 characters. Hyphens or colons may separate groups; keep its original format.").font(.caption) }
             }
             Text("Enter decimal coordinates. Stored only on this Mac. This does not request your device’s location.")
                 .font(.caption).foregroundStyle(.secondary)

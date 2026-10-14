@@ -149,8 +149,12 @@ struct MetricsTests {
                 TMobileGatewayIntegrationTests.run(suite)
                 TMobileGatewayConnectedRadioTests.run(suite)
                 TMobileGatewayIndicatorTests.run(suite)
+                TMobileGatewayRadioPresentationTests.run(suite)
                 TMobileGatewayHistoryTests.run(suite)
+                TMobileTowerReferenceTests.run(suite)
                 TMobileWiFiTests.run(suite)
+                TMobileCellTelemetryTests.run(suite)
+                TMobileOpenCellIDTests.run(suite)
             }),
             ("fork-identity", { FanControlIdentityTests.run(suite) }),
             ("fork-sharing", { ForkSharingTests.run(suite) }),

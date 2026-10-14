@@ -14,7 +14,7 @@ struct TMobileGatewayBlock: View {
     @State private var lastUpdated: Date?
     @State private var showingHistory = false
     @State private var showingTips = false
-    @State private var showingAllRadioMetrics = false
+    @Environment(\.colorScheme) private var colorScheme
 
     private var strings: TMobileGatewayStrings { .localized(l10n.language) }
 
@@ -44,7 +44,8 @@ struct TMobileGatewayBlock: View {
                     } else {
                         status
                     }
-                    allRadioMetrics
+                    Button("More radio & tower details…") { TMobileCellTelemetryWindow.shared.show() }
+                        .buttonStyle(.bordered).controlSize(.small)
                     HStack {
                         Button("Signal guide & tips") { showingTips = true }
                         Spacer(minLength: 0)
@@ -104,16 +105,16 @@ struct TMobileGatewayBlock: View {
     private func readings(_ snapshot: TMobileGatewaySnapshot) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                Text(snapshot.model ?? strings.unknown)
-                    .fontWeight(.medium)
+                if let model = snapshot.model { Text(model).fontWeight(.medium) }
                 Spacer(minLength: 0)
-                Text(registration(snapshot.registration))
+                if let state = snapshot.registration { Text(registration(state)) }
                 if snapshot.roaming == true { Text(strings.roaming) }
             }
             .font(.system(size: 10.5))
             .foregroundStyle(.secondary)
-            if let radio = snapshot.fiveG { radioReadings(radio, title: "5G") }
-            if let radio = snapshot.lte { radioReadings(radio, title: "LTE") }
+            ForEach(TMobileGatewayRadioPresentation.sections(snapshot)) { section in
+                radioReadings(section)
+            }
             HStack(spacing: 6) {
                 if let firmware = snapshot.firmware {
                     Text("\(strings.firmware): \(firmware)")
@@ -145,10 +146,6 @@ struct TMobileGatewayBlock: View {
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
             }
-            Text(strings.usageUnavailable)
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -156,25 +153,33 @@ struct TMobileGatewayBlock: View {
         switch value?.lowercased() {
         case "registered": return strings.registered
         case "not registered", "notregistered", "unregistered", "searching": return strings.notRegistered
-        default: return strings.unknown
+        default: return value ?? ""
         }
     }
 
-    private func radioReadings(_ radio: TMobileRadioSignal, title: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func radioReadings(_ section: TMobileGatewayRadioPresentation.Section) -> some View {
+        let radio = section.radio
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(title).fontWeight(.semibold)
-                Text(radio.bands.isEmpty ? "Band not reported" : radio.bands.joined(separator: ", "))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(section.title).fontWeight(.semibold)
+                if let bands = section.rows.first(where: { $0.id == .bands }) {
+                    Text(bands.value)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Spacer(minLength: 0)
-                if let bars = radio.bars {
-                    TMobileSignalBars(bars: bars, radio: title)
+                if let bars = radio.bars, section.rows.contains(where: { $0.id == .bars }) {
+                    TMobileSignalBars(bars: bars, radio: section.title,
+                                      quality: TMobileGatewayDiagnostics.quality(for: radio.rsrp, metric: .rsrp))
                 }
             }
-            HStack(spacing: 16) {
-                metric("RSRP", radio.rsrp, unit: "dBm")
-                metric("SINR", radio.sinr, unit: "dB")
+            HStack(alignment: .top, spacing: 16) {
+                if let row = TMobileGatewayRadioPresentation.measurementRow(radio, metric: .rsrp) {
+                    metric(row)
+                }
+                if let row = TMobileGatewayRadioPresentation.measurementRow(radio, metric: .sinr) {
+                    metric(row)
+                }
             }
         }
         .font(.system(size: 11))
@@ -182,92 +187,18 @@ struct TMobileGatewayBlock: View {
         .padding(.vertical, 3)
     }
 
-    /// The destination stays visible when the first status request is pending or
-    /// fails; opening it never creates another reader or requests admin access.
-    private var allRadioMetrics: some View {
-        DisclosureGroup(isExpanded: $showingAllRadioMetrics) {
-            VStack(alignment: .leading, spacing: 12) {
-                if service.snapshot == nil {
-                    Text(service.phase == .loading
-                         ? "Waiting for gateway radio readings…"
-                         : "Radio readings are unavailable. Retry the gateway status above.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                radioDetails(service.snapshot?.fiveG, title: "5G", isFiveG: true)
-                Divider()
-                radioDetails(service.snapshot?.lte, title: "LTE / 4G", isFiveG: false)
-                Text("Only values reported by the gateway are shown. Missing values are not zero. Cell IDs do not provide tower coordinates.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+    private func metric(_ row: TMobileGatewayRadioPresentation.Row) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(row.label).foregroundStyle(.secondary)
+            Text(row.value).fontWeight(.medium)
+            if let rating = row.qualityLabel {
+                Text(rating).font(.system(size: 10, weight: .medium))
             }
-            .padding(.top, 8)
-            .textSelection(.enabled)
-        } label: {
-            Label("All radio metrics", systemImage: "list.bullet.rectangle")
-                .font(.system(size: 11, weight: .medium))
         }
-        .accessibilityIdentifier("tmobile.allRadioMetrics")
-    }
-
-    private func radioDetails(_ radio: TMobileRadioSignal?, title: String, isFiveG: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title).fontWeight(.semibold)
-                Spacer(minLength: 0)
-                if radio == nil {
-                    Text("Not reported").foregroundStyle(.secondary)
-                }
-            }
-            .font(.system(size: 11.5))
-            detail("Signal bars", radio?.bars.map { "\($0) / 5" })
-            detail("Bands", radio.flatMap { $0.bands.isEmpty ? nil : $0.bands.joined(separator: ", ") })
-            detail("RSRP", measurement(radio?.rsrp, unit: "dBm"))
-            detail("RSRQ", measurement(radio?.rsrq, unit: "dB"))
-            detail("RSSI", measurement(radio?.rssi, unit: "dBm"))
-            detail("SINR", measurement(radio?.sinr, unit: "dB"))
-            detail("Antenna", radio?.antenna)
-            detail("Bandwidth", measurement(radio?.bandwidthMHz, unit: "MHz"))
-            detail(isFiveG ? "Channel (NR-ARFCN)" : "Channel (EARFCN)", radio?.channel.map(String.init))
-            detail("PCI", radio?.physicalCellID.map(String.init))
-            detail("TAC", radio?.trackingAreaCode.map(String.init))
-            detail("CQI", radio?.cqi.map(String.init))
-            detail("gNB ID", isFiveG ? radio?.gNodeBID.map(String.init) : "Not applicable")
-            detail("Cell ID", radio?.cellID.map(String.init))
-        }
-        .font(.system(size: 11))
-        .monospacedDigit()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(title) radio metrics")
-    }
-
-    private func detail(_ name: String, _ value: String?) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(name).foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-            Text(value ?? "Not reported")
-                .multilineTextAlignment(.trailing)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        .foregroundStyle(row.quality.presentationColor(for: colorScheme))
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(name), \(value ?? "Not reported")")
-    }
-
-    private func measurement(_ value: Double?, unit: String) -> String? {
-        value.map { "\($0.formatted(.number.precision(.fractionLength(0...1)))) \(unit)" }
-    }
-
-    private func metric(_ title: String, _ value: Double?, unit: String) -> some View {
-        HStack(spacing: 4) {
-            Text(title).foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-            Text(measurement(value, unit: unit) ?? "—")
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title), \(measurement(value, unit: unit) ?? "Not reported")")
+        .accessibilityLabel(row.accessibilityValue)
     }
 
 }
@@ -305,9 +236,11 @@ struct TMobileGatewayAddressEditor: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Divider()
-            Text("Show the connected radio, bars and bands together in Settings → Monitor → In the menu bar → T-Mobile connection. All radio metrics are in the gateway dropdown.")
+            Text("Show the connected radio, bars and bands together in Settings → Monitor → In the menu bar → T-Mobile connection. All available radio metrics are in the Radio & tower details window.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button("Local history & tower map…") { history = true }
+            Button("Radio & tower details…") { TMobileCellTelemetryWindow.shared.show() }
+                .buttonStyle(.bordered).controlSize(.small)
             Button("Wi-Fi & router settings…") { TMobileWiFiSettingsWindow.shared.show() }
         }
         .padding(16)
@@ -327,14 +260,31 @@ struct TMobileGatewayAddressEditor: View {
 private struct TMobileSignalBars: View {
     let bars: Int
     let radio: String
+    let quality: TMobileSignalQuality
+    @Environment(\.colorScheme) private var colorScheme
     var body: some View {
         HStack(alignment: .bottom, spacing: 2) {
             ForEach(1...5, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 1).fill(index <= bars ? Color.primary : Color.secondary.opacity(0.25))
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(index <= bars ? quality.presentationColor(for: colorScheme) : Color.secondary.opacity(0.25))
                     .frame(width: 3, height: CGFloat(index * 2 + 3))
             }
             Text("\(bars)/5").padding(.leading, 3)
-        }.accessibilityElement(children: .ignore).accessibilityLabel("\(radio) signal, \(bars) of 5 bars")
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(radio) signal, \(bars) of 5 bars" + (quality == .unknown ? "" : "; RSRP quality \(quality.label)"))
+        .help("The gateway reports the bar count. Color follows its approximate RSRP quality rating.")
+    }
+}
+
+extension TMobileSignalQuality {
+    func presentationColor(for scheme: ColorScheme) -> Color {
+        switch self {
+        case .excellent, .good: return PanelMetricColor.green(for: scheme)
+        case .fair: return PanelMetricColor.yellow(for: scheme)
+        case .poor: return PanelMetricColor.red(for: scheme)
+        case .unknown: return .primary
+        }
     }
 }
 
@@ -377,11 +327,9 @@ private struct TMobileGatewayTipsView: View {
             }
         }.padding(20).frame(width: 590, height: 660)
     }
-    private func guideReading(_ label: String, radio: TMobileRadioSignal?, metric: TMobileSignalMetric) -> some View {
-        let value: Double? = {
-            switch metric { case .rsrp: return radio?.rsrp; case .rsrq: return radio?.rsrq; case .rssi: return radio?.rssi; case .sinr: return radio?.sinr }
-        }()
-        let quality = TMobileGatewayDiagnostics.quality(for: value, metric: metric)
-        return Text("\(label): \(value.map { "\($0.formatted()) \(metric.unit)" } ?? "Not reported")\(quality == .unknown ? "" : " · " + quality.label)")
+    @ViewBuilder private func guideReading(_ label: String, radio: TMobileRadioSignal?, metric: TMobileSignalMetric) -> some View {
+        if let radio, let row = TMobileGatewayRadioPresentation.measurementRow(radio, metric: metric) {
+            Text("\(label): \(row.value)\(row.qualityLabel.map { " · " + $0 } ?? "")")
+        }
     }
 }

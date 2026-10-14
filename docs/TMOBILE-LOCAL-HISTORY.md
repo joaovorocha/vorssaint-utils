@@ -20,13 +20,15 @@ It contains no online tiles, streets, terrain or coverage estimates. Pins are
 owner-supplied references, not verified serving towers. Cell ID alone is not
 enough to establish tower coordinates or a current connection.
 
-**Add tower** accepts a name and decimal latitude/longitude. Bands and a cell
-ID reference are optional. **Measurement location** manually tags future
+**Add tower** accepts a name and decimal latitude/longitude. Bands, a legacy
+cell ID reference, explicit radio (LTE or NR), node ID, ECGI and provenance are
+optional. Select the radio to compare identities. **Measurement location** manually tags future
 samples at the entered coordinate until **Stop tagging new readings** is used.
 No device location permission is requested. No coordinates or IDs are sent
 to a lookup service.
 
-Import accepts UTF-8 CSV with this exact header (quoted commas are supported):
+Import accepts UTF-8 CSV with these required columns (quoted commas and reordered
+columns are supported):
 
 ```csv
 name,latitude,longitude,bands,cellID
@@ -43,6 +45,31 @@ JSON bands/cellID are optional. Imports add records and never overwrite current
 pins. Maximum 2 MB per file and 5,000 total towers; invalid records reject the
 entire import. Latitude must be −90…90, longitude −180…180. Examples above are
 illustrative, not a real tower dataset. Import only files you are allowed to use.
+
+Optional CSV/JSON fields are `radio` (`LTE` or `NR`), `nodeID` (unsigned whole
+number), `ecgi` (bounded reported decimal/hex identity text) and `provenance`
+(source label). Original five-column CSV files and old saved pins still load.
+This custom format does not directly import an OpenCelliD dump.
+
+Example extended CSV, using fabricated identities:
+
+```csv
+name,latitude,longitude,bands,cellID,radio,nodeID,ecgi,provenance
+Example reference,40,-100,n41,,NR,12345,001-01-123456,Manual survey
+```
+
+The public dropdown and advanced radio window compare explicit same-radio node
+IDs or exact ECGI text to saved pins. A conflicting supplied identity rejects
+the match. ECGI format and leading zeros remain intact; different formats are
+not guessed equivalent. Legacy cell ID labels and bands never establish a match.
+Matching records appear first, with **Location unverified** and their provenance;
+other saved entries remain candidates. Duplicate matches stay visible rather
+than silently selecting one tower.
+
+Distance and bearing use only your entered measurement coordinate and saved pin
+coordinates. They describe those two supplied points, not measured tower range,
+gateway GPS or a triangulated serving location. No measurement coordinate means
+no distance or bearing.
 
 Search saved pins by name, band or cell ID. Removing a pin offers Undo until
 another pin is removed or the app closes. Clearing readings requires a separate
