@@ -24,4 +24,4 @@
 "NSCalendarsFullAccessUsageDescription" = "Muestra tus próximas citas en la parte superior de la pantalla. Los eventos del calendario se quedan en este Mac.";
 
 /* macOS Local Network permission prompt. */
-"NSLocalNetworkUsageDescription" = "Vorssaint lee la señal y el estado de conexión de tu gateway T-Mobile solo cuando lo activas. Las lecturas del gateway se quedan en este Mac.";
+"NSLocalNetworkUsageDescription" = "Vorssaint lee el estado de tu gateway T-Mobile cuando activas la función y cambia los ajustes de Wi-Fi solo después de tu confirmación. Los datos del gateway se quedan en este Mac.";

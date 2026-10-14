@@ -24,4 +24,4 @@
 "NSCalendarsFullAccessUsageDescription" = "在屏幕顶部显示即将到来的日程。日历事件仅保留在这台 Mac 上。";
 
 /* macOS Local Network permission prompt. */
-"NSLocalNetworkUsageDescription" = "Vorssaint 仅在你启用此功能时读取 T-Mobile 网关的信号和连接状态。网关读数仅保留在这台 Mac 上。";
+"NSLocalNetworkUsageDescription" = "Vorssaint 在你启用此功能时读取 T-Mobile 网关状态，并且仅在你确认后更改 Wi-Fi 设置。网关数据仅保留在这台 Mac 上。";

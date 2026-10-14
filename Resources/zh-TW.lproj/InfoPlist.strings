@@ -24,4 +24,4 @@
 "NSCalendarsFullAccessUsageDescription" = "在螢幕頂部顯示即將到來的行程。行事曆行程只會保留在這部 Mac 上。";
 
 /* macOS Local Network permission prompt. */
-"NSLocalNetworkUsageDescription" = "Vorssaint 只會在你啟用此功能時讀取 T-Mobile 閘道器的訊號和連線狀態。閘道器讀數只會保留在這部 Mac 上。";
+"NSLocalNetworkUsageDescription" = "Vorssaint 會在你啟用此功能時讀取 T-Mobile 閘道器狀態，並且只會在你確認後變更 Wi-Fi 設定。閘道器資料只會保留在這部 Mac 上。";

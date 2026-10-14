@@ -564,6 +564,8 @@ if (( TEST )); then
         Sources/Vorssaint/Services/Metrics/TMobileGatewayHistorySupport.swift
         Sources/Vorssaint/Services/Metrics/TMobileGatewayHistoryStore.swift
         Sources/Vorssaint/Services/Metrics/TMobileGatewayService.swift
+        Sources/Vorssaint/Services/Metrics/TMobileWiFiSupport.swift
+        Sources/Vorssaint/Services/Metrics/TMobileWiFiService.swift
         Sources/Vorssaint/Core/TMobileGatewayStrings.swift
         Sources/Vorssaint/Services/Metrics/SpeedTest.swift
         Sources/Vorssaint/Services/Metrics/PeripheralBatterySampler.swift
@@ -609,6 +611,7 @@ if (( TEST )); then
         ./Tests/UninstallSpacesTests.sh || test_status=1
         ./Tests/DeveloperInstallIsolationTests.sh || test_status=1
         zsh ./Tests/TMobileGatewayMonitorTests.sh || test_status=1
+        zsh ./Tests/TMobileWiFiServiceTests.sh || test_status=1
     fi
     discard_test_preferences || test_status=1
     exit $test_status

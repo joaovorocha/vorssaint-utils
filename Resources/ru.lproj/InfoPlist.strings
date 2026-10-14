@@ -24,4 +24,4 @@
 "NSCalendarsFullAccessUsageDescription" = "Показывает предстоящие встречи в верхней части экрана. События календаря остаются на этом Mac.";
 
 /* macOS Local Network permission prompt. */
-"NSLocalNetworkUsageDescription" = "Vorssaint считывает сигнал и состояние подключения вашего шлюза T-Mobile, только когда вы включаете эту функцию. Показания шлюза остаются на этом Mac.";
+"NSLocalNetworkUsageDescription" = "Vorssaint считывает состояние вашего шлюза T-Mobile, когда функция включена, и изменяет настройки Wi-Fi только после вашего подтверждения. Данные шлюза остаются на этом Mac.";
