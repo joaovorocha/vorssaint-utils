@@ -107,6 +107,7 @@ enum SettingsBackupSupport {
         "menuBarTMobileLTERSRP", "menuBarTMobile5GRSRP", "menuBarTMobileLTERSINR", "menuBarTMobile5GSINR",
         "menuBarTMobileLTERSRQ", "menuBarTMobile5GRSRQ", "menuBarTMobileLTERSSI", "menuBarTMobile5GRSSI",
         "tMobileHistoryRecording",
+        DefaultsKey.tMobileUnifiedMenuBarMigrated,
         DefaultsKey.displaysSwitchedOff,
         DefaultsKey.displaysSwitchedOffFingerprints,
         DefaultsKey.dockPreviewRestoreAutohide,

@@ -14,6 +14,7 @@ struct TMobileGatewayBlock: View {
     @State private var lastUpdated: Date?
     @State private var showingHistory = false
     @State private var showingTips = false
+    @State private var showingAllRadioMetrics = false
 
     private var strings: TMobileGatewayStrings { .localized(l10n.language) }
 
@@ -43,6 +44,7 @@ struct TMobileGatewayBlock: View {
                     } else {
                         status
                     }
+                    allRadioMetrics
                     HStack {
                         Button("Signal guide & tips") { showingTips = true }
                         Spacer(minLength: 0)
@@ -128,10 +130,17 @@ struct TMobileGatewayBlock: View {
                     Text(strings.lastUpdated)
                     Text(lastUpdated, style: .time)
                     Spacer(minLength: 0)
-                    Button { service.refresh() } label: { Image(systemName: "arrow.clockwise") }
+                    Button { service.refresh() } label: {
+                        if service.phase == .loading {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                    }
                         .buttonStyle(.plain)
-                        .help(strings.retry)
-                        .accessibilityLabel(strings.retry)
+                        .disabled(service.phase == .loading)
+                        .help("Refresh radio metrics")
+                        .accessibilityLabel(service.phase == .loading ? "Refreshing radio metrics" : "Refresh radio metrics")
                 }
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
@@ -152,55 +161,115 @@ struct TMobileGatewayBlock: View {
     }
 
     private func radioReadings(_ radio: TMobileRadioSignal, title: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(title).fontWeight(.semibold)
-                Text(radio.bands.joined(separator: ", ")).foregroundStyle(.secondary)
+                Text(radio.bands.isEmpty ? "Band not reported" : radio.bands.joined(separator: ", "))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 if let bars = radio.bars {
                     TMobileSignalBars(bars: bars, radio: title)
                 }
             }
-            HStack(spacing: 12) {
+            HStack(spacing: 16) {
                 metric("RSRP", radio.rsrp, unit: "dBm")
                 metric("SINR", radio.sinr, unit: "dB")
             }
-            HStack(spacing: 12) {
-                metric("RSRQ", radio.rsrq, unit: "dB")
-                metric("RSSI", radio.rssi, unit: "dBm")
-            }
-            .foregroundStyle(.secondary)
-            DisclosureGroup("Radio details") {
-                VStack(alignment: .leading, spacing: 3) {
-                    detail("Cell ID", radio.cellID.map(String.init))
-                    detail("Antenna", radio.antenna)
-                    detail("Bandwidth", radio.bandwidthMHz.map { "\($0.formatted()) MHz" })
-                    detail("Channel", radio.channel.map(String.init))
-                    detail("PCI", radio.physicalCellID.map(String.init))
-                    detail("TAC", radio.trackingAreaCode.map(String.init))
-                    detail("CQI", radio.cqi.map(String.init))
-                    detail("gNB ID", radio.gNodeBID.map(String.init))
-                    Text("Not reported fields remain unavailable. Cell IDs do not provide tower coordinates.")
-                        .font(.system(size: 9)).foregroundStyle(.tertiary)
-                }.textSelection(.enabled)
-            }
         }
-        .font(.system(size: 10.5))
+        .font(.system(size: 11))
         .monospacedDigit()
+        .padding(.vertical, 3)
+    }
+
+    /// The destination stays visible when the first status request is pending or
+    /// fails; opening it never creates another reader or requests admin access.
+    private var allRadioMetrics: some View {
+        DisclosureGroup(isExpanded: $showingAllRadioMetrics) {
+            VStack(alignment: .leading, spacing: 12) {
+                if service.snapshot == nil {
+                    Text(service.phase == .loading
+                         ? "Waiting for gateway radio readings…"
+                         : "Radio readings are unavailable. Retry the gateway status above.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                radioDetails(service.snapshot?.fiveG, title: "5G", isFiveG: true)
+                Divider()
+                radioDetails(service.snapshot?.lte, title: "LTE / 4G", isFiveG: false)
+                Text("Only values reported by the gateway are shown. Missing values are not zero. Cell IDs do not provide tower coordinates.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 8)
+            .textSelection(.enabled)
+        } label: {
+            Label("All radio metrics", systemImage: "list.bullet.rectangle")
+                .font(.system(size: 11, weight: .medium))
+        }
+        .accessibilityIdentifier("tmobile.allRadioMetrics")
+    }
+
+    private func radioDetails(_ radio: TMobileRadioSignal?, title: String, isFiveG: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title).fontWeight(.semibold)
+                Spacer(minLength: 0)
+                if radio == nil {
+                    Text("Not reported").foregroundStyle(.secondary)
+                }
+            }
+            .font(.system(size: 11.5))
+            detail("Signal bars", radio?.bars.map { "\($0) / 5" })
+            detail("Bands", radio.flatMap { $0.bands.isEmpty ? nil : $0.bands.joined(separator: ", ") })
+            detail("RSRP", measurement(radio?.rsrp, unit: "dBm"))
+            detail("RSRQ", measurement(radio?.rsrq, unit: "dB"))
+            detail("RSSI", measurement(radio?.rssi, unit: "dBm"))
+            detail("SINR", measurement(radio?.sinr, unit: "dB"))
+            detail("Antenna", radio?.antenna)
+            detail("Bandwidth", measurement(radio?.bandwidthMHz, unit: "MHz"))
+            detail(isFiveG ? "Channel (NR-ARFCN)" : "Channel (EARFCN)", radio?.channel.map(String.init))
+            detail("PCI", radio?.physicalCellID.map(String.init))
+            detail("TAC", radio?.trackingAreaCode.map(String.init))
+            detail("CQI", radio?.cqi.map(String.init))
+            detail("gNB ID", isFiveG ? radio?.gNodeBID.map(String.init) : "Not applicable")
+            detail("Cell ID", radio?.cellID.map(String.init))
+        }
+        .font(.system(size: 11))
+        .monospacedDigit()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(title) radio metrics")
     }
 
     private func detail(_ name: String, _ value: String?) -> some View {
-        HStack { Text(name).foregroundStyle(.secondary); Spacer(minLength: 0); Text(value ?? "Not reported") }
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(name).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            Text(value ?? "Not reported")
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(name), \(value ?? "Not reported")")
+    }
+
+    private func measurement(_ value: Double?, unit: String) -> String? {
+        value.map { "\($0.formatted(.number.precision(.fractionLength(0...1)))) \(unit)" }
     }
 
     private func metric(_ title: String, _ value: Double?, unit: String) -> some View {
         HStack(spacing: 4) {
             Text(title).foregroundStyle(.secondary)
             Spacer(minLength: 0)
-            Text(value.map { "\($0.formatted(.number.precision(.fractionLength(0...1)))) \(unit)" } ?? "—")
+            Text(measurement(value, unit: unit) ?? "—")
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(measurement(value, unit: unit) ?? "Not reported")")
     }
+
 }
 
 /// An explicit save avoids polling partial addresses while the user types.
@@ -236,7 +305,7 @@ struct TMobileGatewayAddressEditor: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Divider()
-            Text("Pin LTE / 5G signal, bands and individual numbers in Settings → Monitor → In the menu bar.")
+            Text("Show the connected radio, bars and bands together in Settings → Monitor → In the menu bar → T-Mobile connection. All radio metrics are in the gateway dropdown.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button("Local history & tower map…") { history = true }
             Button("Wi-Fi & router settings…") { TMobileWiFiSettingsWindow.shared.show() }

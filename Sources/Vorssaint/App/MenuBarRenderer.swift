@@ -64,6 +64,7 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
     }
 
     func title(_ strings: Strings) -> String {
+        if self == .tMobile5G { return "T-Mobile connection" }
         if let tMobileReading { return tMobileReading.title }
         switch self {
         case .cpu: return strings.monitorShowCPU
@@ -90,7 +91,7 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
         .gpu, .gpuTemperature,
         .memory,
         .battery, .batteryTime, .batteryTemperature, .peripheralBattery,
-        .network, .tMobileLTE, .tMobile5G, .tMobileLTEBands, .tMobile5GBands, .tMobileLTERSRP, .tMobile5GRSRP, .tMobileLTERSINR, .tMobile5GSINR, .tMobileLTERSRQ, .tMobile5GRSRQ, .tMobileLTERSSI, .tMobile5GRSSI,
+        .network, .tMobile5G,
         .diskUsage, .diskActivity, .connectedDevices, .power, .fanSpeed,
     ]
 
@@ -158,11 +159,7 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
     }
 
     static func anyEnabled(in defaults: UserDefaults) -> Bool {
-        allCases.contains {
-            defaults.bool(forKey: $0.defaultsKey)
-                && defaults.bool(forKey: $0.feature.availabilityKey)
-                && $0.isAvailableOnCurrentHardware
-        }
+        !enabled(in: defaults).isEmpty
     }
 }
 
@@ -229,6 +226,7 @@ enum MenuBarLabelStyle: String, CaseIterable {
 /// One drawable piece of the menu bar text: plain (adaptive) text, or the memory
 /// pressure dot, which carries a green/yellow/red color.
 enum MenuBarSegment {
+    case cellularBlock(TMobileGatewayMenuBarSupport.ConnectionDisplay, style: MenuBarBlockStyle)
     case text(String)
     case symbol(String)
     case largeSymbol(String)
@@ -388,6 +386,7 @@ enum MenuBarRenderer {
         var renderedCPU = false
         var renderedGPU = false
         var renderedBattery = false
+        var renderedGateway = false
 
         for metric in metrics {
             switch metric {
@@ -509,12 +508,9 @@ enum MenuBarRenderer {
                                                 pressure: memoryStyle.showsDot ? snapshot.memoryPressure : nil)])
                 }
             case .tMobileLTE, .tMobile5G, .tMobileLTEBands, .tMobile5GBands, .tMobileLTERSRP, .tMobile5GRSRP, .tMobileLTERSINR, .tMobile5GSINR, .tMobileLTERSRQ, .tMobile5GRSRQ, .tMobileLTERSSI, .tMobile5GRSSI:
-                if let reading = metric.tMobileReading {
-                    let display = TMobileGatewayMenuBarSupport.display(reading, snapshot: gatewaySnapshot,
-                        signalStyle: UserDefaults.standard.string(forKey: reading.signalStyleDefaultsKey) ?? "bars")
-                    groups.append([.metricBlock(label: display.label, value: display.value,
-                                                minimumValue: display.minimumValue, style: style, pressure: nil)])
-                }
+                guard !renderedGateway else { break }
+                renderedGateway = true
+                groups.append([.cellularBlock(TMobileGatewayMenuBarSupport.connection(snapshot: gatewaySnapshot), style: style)])
             case .network:
                 if let down = snapshot.netDownBytesPerSec, let up = snapshot.netUpBytesPerSec {
                     groups.append([.networkBlock(down: MetricFormat.networkRateCompact(down),
@@ -770,6 +766,8 @@ enum MenuBarRenderer {
         let stacked = usesStackedLayout(for: snapshot, metrics: metrics, allowStacked: allowStacked)
         for segment in segments(for: snapshot, metrics: metrics, allowStacked: allowStacked, gatewaySnapshot: gatewaySnapshot) {
             switch segment {
+            case let .cellularBlock(display, style):
+                result.append(cellularBlockAttachment(display: display, style: style))
             case let .text(string):
                 let rendered = string == "\n" && !linePrefix.isEmpty ? "\n" + linePrefix : string
                 result.append(NSAttributedString(string: rendered))
@@ -833,6 +831,16 @@ enum MenuBarRenderer {
         attachment.image = image
         let side: CGFloat = enlarged ? 14.2 : (stacked ? 9.2 : 11.4)
         attachment.bounds = NSRect(x: 0, y: enlarged ? -3.0 : (stacked ? -1.0 : -1.8), width: side, height: side)
+        return NSAttributedString(attachment: attachment)
+    }
+
+    private static func cellularBlockAttachment(display: TMobileGatewayMenuBarSupport.ConnectionDisplay,
+                                               style: MenuBarBlockStyle) -> NSAttributedString {
+        let image = TMobileGatewayIndicatorDrawing.image(display, style: style)
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = NSRect(x: 0, y: (style == .readable ? -5.9 : -5.7) + legacyBlockAttachmentNudge,
+                                   width: image.size.width, height: image.size.height)
         return NSAttributedString(attachment: attachment)
     }
 

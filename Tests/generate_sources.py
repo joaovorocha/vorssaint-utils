@@ -986,7 +986,8 @@ def main():
     if not switch or not battery_case or not next_case:
         raise ValueError("Expected the battery branch in blockSegments")
     for line in ["        let usesBars = appearance == .bars\n",
-                 "        var renderedCPU = false\n", "        var renderedGPU = false\n"]:
+                 "        var renderedCPU = false\n", "        var renderedGPU = false\n",
+                 "        var renderedGateway = false\n"]:
         if line not in prefix:
             raise ValueError("Expected the unrelated activity state in blockSegments")
         prefix = prefix.replace(line, "")

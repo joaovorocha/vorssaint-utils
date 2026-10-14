@@ -399,8 +399,8 @@ private struct MenuBarMetricTile: View {
 
     /// What the reading's option makes the menu bar show, in its own terms.
     private var optionsSummary: String {
-        if metric.tMobileReading?.isSignal == true {
-            return TMobileGatewayMenuBarSupport.signalStyle(gatewaySignalStyle) == "bars" ? "Bars" : "Number"
+        if metric.tMobileReading != nil {
+            return "Connected band & signal"
         }
         switch metric {
         case .memory:
@@ -418,11 +418,9 @@ private struct MenuBarMetricTile: View {
     }
 
     private var options: AnyView? {
-        if metric.tMobileReading?.isSignal == true {
-            return AnyView(Picker("Cellular signal", selection: $gatewaySignalStyle) {
-                Text("Bars").tag("bars")
-                Text("Number (out of 5)").tag("value")
-            }.pickerStyle(.menu))
+        if metric.tMobileReading != nil {
+            return AnyView(Text("Shows the currently reported LTE or 5G connection, signal bars and its bands together. Open the dropdown for all radio metrics.")
+                .font(.callout).fixedSize(horizontal: false, vertical: true).frame(width: 260))
         }
         switch metric {
         case .memory:

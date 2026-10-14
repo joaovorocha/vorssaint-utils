@@ -1,5 +1,9 @@
 # T-Mobile gateway monitor
 
+For beta.4's combined menu bar indicator and complete dropdown readings, see
+[Connected radio and dropdown metrics](TMOBILE-INDICATOR.md). Administrator
+Wi-Fi controls are described separately in [Wi-Fi and router settings](TMOBILE-WIFI.md).
+
 Vorssaint can show signal and connection status from a compatible T-Mobile
 G4AR gateway on the Mac’s local network. This optional feature reads the
 credential-free `GET /TMI/v1/gateway?get=all` endpoint.
@@ -41,14 +45,18 @@ registration and roaming status are shown when the gateway reports them. Fields
 that the firmware omits remain unavailable or unknown; missing values are never
 treated as zero or as a successful connection.
 
-Polling runs only while the relevant network panel is visible and the feature
-is enabled. Successful requests refresh about every 15 seconds. Failures back
+Polling runs while the enabled network panel is visible or the menu bar
+connection indicator is enabled. Both share one reader. Successful requests
+refresh about every 15 seconds. Failures back
 off to a maximum of 120 seconds, and **Retry** starts another request. Closing
-the panel stops polling. Errors clear live readings so an old sample cannot
-appear to be current. Gateway status stays in memory and is not persisted.
+the panel stops its polling demand; an enabled menu bar indicator continues.
+Errors clear live readings so an old sample cannot appear to be current.
+Gateway status stays in memory. Optional local history stores allowlisted
+samples only when separately enabled.
 
-This version has no account credentials or login flow. Firmware that responds
-with HTTP 401 or 403 requires authentication and is unsupported by this integration.
+Public signal monitoring has no account credentials or login flow. Firmware
+that responds with HTTP 401 or 403 requires authentication and is unsupported
+by this credential-free reader.
 Unreachable gateways, denied local network access and unsupported responses
 show an unavailable or error state. Check the address, local connection and
 macOS permission before retrying.
@@ -56,7 +64,8 @@ macOS permission before retrying.
 The local endpoint does not provide verified plan or billing usage, so the
 panel explicitly marks plan usage as unavailable. This feature does not read
 connected clients, SIM identifiers or GPS data, and it does not change router
-settings, restart the gateway or send other router writes.
+settings, restart the gateway or send other router writes. The separate Wi-Fi
+window uses an explicit administrator session and reviewed changes.
 
 ## Development checks
 
