@@ -131,8 +131,8 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
             Divider()
             HStack {
                 Label("Saved on this Mac · Keep until deleted", systemImage: "internaldrive")
+                    .help("Coverage sessions are stored on this Mac until you delete them.")
                 Spacer()
-                Label("Shadow server not connected", systemImage: "network.slash")
             }.font(.caption).foregroundStyle(.secondary).padding(12)
         }
         .frame(minWidth: 860, minHeight: 700)
