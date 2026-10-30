@@ -21,6 +21,7 @@ struct NetworkSection: View {
     @AppStorage(DefaultsKey.monitorNetTest) private var netTest = true
     @AppStorage(DefaultsKey.monitorNetAddresses) private var netAddresses = true
     @AppStorage(DefaultsKey.monitorNetTMobile) private var netTMobile = false
+    @AppStorage(DefaultsKey.monitorNetTailscale) private var netTailscale = true
     @AppStorage(DefaultsKey.panelNetworkOrder) private var networkOrderRaw = ""
     @AppStorage(DefaultsKey.networkSpeedUnit) private var speedUnit = NetworkSpeedUnit.bytes
     @State private var draggingBlock: Block?
@@ -82,7 +83,7 @@ struct NetworkSection: View {
         }
     }
 
-    private enum Block: String, PanelOrderItem { case speed, apps, totals, addresses, test, tmobile }
+    private enum Block: String, PanelOrderItem { case speed, apps, totals, addresses, test, tmobile, tailscale }
 
     private var visibleBlocks: [Block] {
         orderedBlocks.filter(isVisible)
@@ -113,6 +114,8 @@ struct NetworkSection: View {
         case .addresses: return netAddresses
         case .test: return netTest
         case .tmobile: return netTMobile
+        // Nothing to show on a Mac without Tailscale, so no empty row either.
+        case .tailscale: return netTailscale && TailscaleStatusService.isInstalled
         }
     }
 
@@ -125,6 +128,7 @@ struct NetworkSection: View {
         netAddresses = true
         netTest = true
         netTMobile = false
+        netTailscale = true
     }
 
     @ViewBuilder
@@ -139,6 +143,7 @@ struct NetworkSection: View {
             if gatewayPollingVisible {
                 TMobileGatewayBlock(isVisible: $netTMobile, editing: editing)
             }
+        case .tailscale: TailscaleBlock(isVisible: $netTailscale, editing: editing)
         }
     }
 

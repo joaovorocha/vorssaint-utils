@@ -33,6 +33,7 @@ struct MonitorPanelConfig: View {
     @AppStorage(DefaultsKey.monitorNetTest) private var netTest = true
     @AppStorage(DefaultsKey.monitorNetAddresses) private var netAddresses = true
     @AppStorage(DefaultsKey.monitorNetTMobile) private var netTMobile = false
+    @AppStorage(DefaultsKey.monitorNetTailscale) private var netTailscale = true
     @State private var configuringTMobile = false
 
     @AppStorage(DefaultsKey.monitorShowDisk) private var showDisk = true
@@ -156,6 +157,10 @@ struct MonitorPanelConfig: View {
             itemTile(TMobileGatewayStrings.localized(l10n.language).title,
                      symbol: "antenna.radiowaves.left.and.right", value: $netTMobile, available: available,
                      options: AnyView(TMobileGatewayAddressEditor()))
+            if TailscaleStatusService.isInstalled {
+                itemTile(TailscaleStrings.localized(l10n.language).title, symbol: "point.3.connected.trianglepath.dotted",
+                         value: $netTailscale, available: available)
+            }
         case .disk:
             itemTile(l10n.s.monitorItemDiskUsage, symbol: "internaldrive", value: $diskUsage, available: available)
             itemTile(l10n.s.monitorItemDiskActivity, symbol: "arrow.up.arrow.down", value: $diskActivity, available: available,
@@ -233,6 +238,9 @@ struct MonitorPanelConfig: View {
                 Toggle(l10n.s.monitorItemNetTotals, isOn: $netTotals)
                 Toggle(l10n.s.networkIPAddresses, isOn: $netAddresses)
                 Toggle(l10n.s.monitorItemNetTest, isOn: $netTest)
+                if TailscaleStatusService.isInstalled {
+                    Toggle(TailscaleStrings.localized(l10n.language).enable, isOn: $netTailscale)
+                }
                 Toggle(TMobileGatewayStrings.localized(l10n.language).enable, isOn: $netTMobile)
                 if netTMobile {
                     Button(TMobileGatewayStrings.localized(l10n.language).configure) {
