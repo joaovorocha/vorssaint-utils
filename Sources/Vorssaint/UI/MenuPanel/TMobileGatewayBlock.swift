@@ -40,6 +40,12 @@ struct TMobileGatewayBlock: View {
                     }
                     if let snapshot = service.snapshot {
                         readings(snapshot)
+                        #if SHADOW_UTILITIES
+                        if service.isRelayed {
+                            Label("Via Shadow server · gateway not on this network", systemImage: "server.rack")
+                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                        }
+                        #endif
                     } else {
                         status
                     }

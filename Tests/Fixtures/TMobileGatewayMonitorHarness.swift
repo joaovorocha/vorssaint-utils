@@ -32,6 +32,9 @@ extension Notification.Name {
 }
 
 @main struct TMobileGatewayMonitorHarness {
+    static let relayed = TMobileGatewaySnapshot(model: nil, firmware: nil, uptime: nil, registration: "registered",
+        roaming: false, lte: nil, fiveG: TMobileRadioSignal(bars: 2, bands: ["n41"], rsrp: -112, rsrq: nil, rssi: nil, sinr: 4))
+
     @MainActor static func main() {
         let domain = "com.vorssaint.tests.tmobile-monitor.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: domain)!
@@ -54,6 +57,9 @@ extension Notification.Name {
         monitor.syncPreferences()
         wait { service.phase == .ready }
         check(MonitorProtocol.count == 1 && recordings == 1, "enabled visible panel shares one successful snapshot")
+        let direct = service.snapshot
+        service.useRelayed(relayed, at: Date())
+        check(service.snapshot == direct && !service.isRelayed, "a relayed reading never replaces a live LAN reading")
         monitor.setRadioWindowVisible(true)
         monitor.setPanelVisible(false)
         settle()
@@ -133,7 +139,22 @@ extension Notification.Name {
               "invalid origins do not open another request")
         defaults.set(false, forKey: "menu")
         monitor.syncPreferences()
-        print("PASS: 20 T-Mobile shared-reader lifecycle checks; every request intercepted locally")
+        let failing = URLSessionConfiguration.ephemeral
+        failing.protocolClasses = [UnreachableProtocol.self]
+        let offLAN = TMobileGatewayService(configuration: failing)
+        offLAN.useRelayed(relayed, at: Date())
+        check(offLAN.snapshot == nil, "a stopped reader ignores relayed readings")
+        offLAN.start(baseURL: "http://192.168.12.1")
+        wait { if case .failed = offLAN.phase { return true } else { return false } }
+        offLAN.useRelayed(relayed, at: Date())
+        check(offLAN.snapshot == relayed && offLAN.isRelayed && offLAN.phase == .ready,
+              "a relayed reading fills in while the LAN gateway is unreachable")
+        offLAN.refresh()
+        wait { UnreachableProtocol.count >= 2 && offLAN.phase != .loading }
+        check(offLAN.snapshot == relayed && offLAN.isRelayed, "a failed LAN poll keeps a fresh relayed reading")
+        offLAN.cancel()
+        check(offLAN.snapshot == nil && !offLAN.isRelayed, "stopping the reader clears the relayed reading")
+        print("PASS: 26 T-Mobile shared-reader lifecycle checks; every request intercepted locally")
     }
 
     private static func check(_ condition: @autoclosure () -> Bool, _ message: String) {
@@ -159,6 +180,19 @@ private final class MonitorProtocol: URLProtocol {
         client?.urlProtocol(self, didReceive: reply, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(#"{"signal":{"5g":{"bars":3,"bands":["n41"],"rsrp":-97}}}"#.utf8))
         client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+private final class UnreachableProtocol: URLProtocol {
+    private static let lock = NSLock()
+    private static var captured = 0
+    static var count: Int { lock.withLock { captured } }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lock.withLock { Self.captured += 1 }
+        client?.urlProtocol(self, didFailWithError: URLError(.cannotConnectToHost))
     }
     override func stopLoading() {}
 }

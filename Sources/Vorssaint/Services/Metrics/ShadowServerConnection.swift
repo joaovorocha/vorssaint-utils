@@ -232,6 +232,8 @@ import Network
             let poll = self.routerValues.filter { abs($0.value.at.timeIntervalSince(now)) <= 5 }.mapValues(\.value)
             guard let reading = ShadowServerRouter.reading(poll) else { return }
             self.routerReading = RouterReading(snapshot: reading.snapshot, date: now)
+            // Off the gateway's LAN, the menu bar and panel show the server's reading.
+            TMobileGatewayMonitor.shared.service.useRelayed(reading.snapshot, at: now)
         }
     }
 
