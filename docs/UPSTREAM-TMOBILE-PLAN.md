@@ -86,10 +86,12 @@ SECURITY.md, PR template):
 
 ## Known gaps for upstream review
 
-- Several newer UI strings (menu bar option toggles, "T-Mobile connection",
-  connection accessibility text, signal tips, radio field labels) are English only;
-  `TMobileGatewayStrings` covers the original panel labels in all 15 locales.
-  CONTRIBUTING asks for every locale, so either translate before marking ready or
-  ask the maintainer.
+- Localization (commit `15967095`): 69 more strings moved into
+  `TMobileGatewayStrings` for all 15 locales (menu bar options, spoken
+  connection, radio labels, ratings, signal guide, tips, band notes). The
+  translations were written by an agent and have no native-speaker review.
+  Technical acronyms (RSRP, SINR, PCI, TAC, CQI, gNB/eNB ID, ECGI, LTE/5G) stay
+  untranslated. A new test checks that every `...Format` string keeps its `%@`
+  count in every locale.
 - Live behavior: the fork's docs record a check against a TMO-G4AR (firmware
   1.00.18); not re-verified here. The ported branch itself was build/test-verified, not driven in the UI.

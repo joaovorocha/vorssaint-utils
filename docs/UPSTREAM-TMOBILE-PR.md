@@ -2,7 +2,7 @@
 
 Target: `vorssaint/vorssaint-utils` `main`
 Head: `joaovorocha/vorssaint-utils:upstream/tmobile-gateway`
-Open as: **draft** (no issue discussed yet; English-only strings remain)
+Open as: **draft** (no issue discussed yet). Head commits: `9d908de8`, `15967095`.
 
 ## Title
 
@@ -60,19 +60,17 @@ coverage mapping.
 
 ### Still missing (why this is a draft)
 
-- `TMobileGatewayStrings` localizes the original panel labels in all 15 languages,
-  but newer text (menu bar options, "T-Mobile connection", spoken connection
-  description, signal tips, radio field labels) is English only. I can translate
-  those before review if the direction is acceptable.
+- All gateway text is in `TMobileGatewayStrings` for the 15 app languages, but
+  the non-English wording has not been reviewed by native speakers yet.
+  Corrections are welcome.
 - No issue yet. Happy to open one first if you prefer to discuss scope there.
 
 ## Verification
 
 Run on this branch (Apple Silicon Mac, macOS 27.0.1):
 
-- `./build.sh --test-suite=tmobile --test-suite=network --test-suite=app-management --test-suite=switcher-model --test-suite=metrics`: pass, 3,448 checks
-- `./build.sh --test` (all suites plus `Tests/TMobileGatewayMonitorTests.sh` and `Tests/TMobileGatewayAppearanceTests.sh`): pass, 120,046 checks, plus preference cleanup, uninstall Spaces, Developer install isolation, 11 shared-reader checks, the grouping check and 247 appearance checks
-- `./build.sh` then `./build/Vorssaint --selftest`: build without warnings, `SELFTEST OK`
+- `./build.sh --test` (all suites plus `Tests/TMobileGatewayMonitorTests.sh` and `Tests/TMobileGatewayAppearanceTests.sh`): 120,134 of 120,136 checks passed; the 2 `repository` failures (typewriter apostrophes, French spacing) were fixed, then `--test-suite=repository --test-suite=tmobile --test-suite=localization --test-suite=metrics --test-suite=network` passed (10,065 checks). Shell harnesses pass: 11 shared-reader checks, the grouping check and 247 appearance checks.
+- `./build.sh` then `./build/Vorssaint --selftest` on the final commit: no warnings, `SELFTEST OK`
 
 Tests use fabricated responses and intercepted requests; no real gateway is
 contacted. The monitor harness checks that nothing is requested while off, that
