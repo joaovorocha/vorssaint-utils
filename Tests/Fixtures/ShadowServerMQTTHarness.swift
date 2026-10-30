@@ -59,17 +59,21 @@ import Foundation
         func values(_ raw: [String: String]) -> [String: Any] {
             raw.reduce(into: [:]) { $0[$1.key] = ShadowServerRouter.value(Data($1.value.utf8)) }
         }
-        let fields = ["signal/status": "\"ok\"", "signal/updated": "1700000000", "signal/registration": "\"registered\"",
-                      "signal/5g/band": "\"n41\"", "signal/5g/rsrp_dbm": "-108", "signal/5g/sinr_db": "8",
-                      "signal/5g/cell_id": "304", "cell/5g/bandwidth": "\"90M\"", "cell/5g/pci": "910",
-                      "cell/5g/supported_bands": "\"n25,n41\"", "signal/4g/band": "\"b66\"", "signal/4g/rsrp_dbm": "-115"]
+        // Payloads exactly as the server's publisher sends them: text raw, numbers as JSON.
+        let fields = ["signal/status": "ok", "signal/updated": "1700000000", "signal/registration": "registered",
+                      "signal/roaming": "false", "signal/5g/band": "n41", "signal/5g/rsrp_dbm": "-108", "signal/5g/sinr_db": "8",
+                      "signal/5g/antenna": "External", "signal/5g/cell_id": "304", "cell/5g/bandwidth": "90M", "cell/5g/pci": "910",
+                      "cell/5g/supported_bands": "n25,n41", "signal/4g/band": "b66", "signal/4g/rsrp_dbm": "-115"]
         let reading = ShadowServerRouter.reading(values(fields))
         expect(reading?.date == Date(timeIntervalSince1970: 1_700_000_000), "router reading uses the server poll time")
         expect(reading?.snapshot.fiveG?.rsrp == -108 && reading?.snapshot.fiveG?.bands == ["n41"]
                && reading?.snapshot.fiveG?.bandwidthMHz == 90 && reading?.snapshot.fiveG?.physicalCellID == 910
                && reading?.snapshot.fiveG?.supportedBands == ["n25", "n41"], "5G fields mapped")
-        expect(reading?.snapshot.lte?.rsrp == -115 && reading?.snapshot.registration == "registered", "LTE and generic fields mapped")
-        var stale = fields; stale["signal/status"] = "\"error\""
+        expect(reading?.snapshot.lte?.rsrp == -115 && reading?.snapshot.registration == "registered"
+               && reading?.snapshot.roaming == false && reading?.snapshot.fiveG?.antenna == "External", "LTE and generic fields mapped")
+        var quoted = fields; quoted["signal/status"] = "\"ok\""; quoted["signal/5g/band"] = "\"n41\""
+        expect(ShadowServerRouter.reading(values(quoted))?.snapshot.fiveG?.bands == ["n41"], "JSON-quoted text also accepted")
+        var stale = fields; stale["signal/status"] = "error"
         expect(ShadowServerRouter.reading(values(stale)) == nil, "server error status yields no reading")
         var sentinel = fields; sentinel["signal/5g/rsrp_dbm"] = "0"; sentinel["signal/4g/rsrp_dbm"] = "0"
         expect(ShadowServerRouter.reading(values(sentinel))?.snapshot.fiveG?.rsrp == nil, "gateway range checks still apply")

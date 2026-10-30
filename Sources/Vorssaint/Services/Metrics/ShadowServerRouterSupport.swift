@@ -51,7 +51,11 @@ enum ShadowServerRouter {
         return (snapshot, Date(timeIntervalSince1970: epoch))
     }
 
+    /// Numbers and booleans arrive as JSON; text fields arrive raw (`ok`, `n41`).
     static func value(_ payload: Data) -> Any? {
-        try? JSONSerialization.jsonObject(with: payload, options: .fragmentsAllowed)
+        if let json = try? JSONSerialization.jsonObject(with: payload, options: .fragmentsAllowed) { return json }
+        guard let text = String(data: payload, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty, text.count <= 256 else { return nil }
+        return text
     }
 }
