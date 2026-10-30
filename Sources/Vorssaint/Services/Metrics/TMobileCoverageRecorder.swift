@@ -38,8 +38,12 @@ import IOKit
     // While the Shadow server's feed is fresh it is the only source, so two
     // sources never interleave readings in one session.
     private var lastServerReadingAt: Date?
+    private var latestSnapshotFromServer = false
+    // The server poller backs off to 120 s after gateway errors; one server
+    // reading stays current that long so direct polling does not fill the gaps.
+    private static let serverFeedWindow: TimeInterval = 130
     private var serverFeedIsFresh: Bool {
-        lastServerReadingAt.map { (0...30).contains(Date().timeIntervalSince($0)) } ?? false
+        lastServerReadingAt.map { (0...Self.serverFeedWindow).contains(Date().timeIntervalSince($0)) } ?? false
     }
     private var latestObservationID: UUID?
     private var lastCompletedTestObservationID: UUID?
@@ -217,6 +221,7 @@ import IOKit
         guard previousAddress == address else { return }
         latestSnapshot = snapshot
         latestSnapshotDate = date
+        latestSnapshotFromServer = fromServer
         let fix = freshLocation(at: date)
         latestObservationID = store.record(snapshot: snapshot, at: date, location: fix)
         if latestObservationID == nil, let error = store.errorMessage {
@@ -240,8 +245,9 @@ import IOKit
     }
 
     private func freshSnapshot(at date: Date) -> TMobileGatewaySnapshot? {
+        let window = latestSnapshotFromServer ? Self.serverFeedWindow : 30
         guard let latestSnapshot, let receivedAt = latestSnapshotDate,
-              date.timeIntervalSince(receivedAt) >= 0, date.timeIntervalSince(receivedAt) <= 30 else { return nil }
+              date.timeIntervalSince(receivedAt) >= 0, date.timeIntervalSince(receivedAt) <= window else { return nil }
         return latestSnapshot
     }
 
