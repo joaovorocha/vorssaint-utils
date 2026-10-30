@@ -34,7 +34,7 @@ import Network
     private var credentials: Saved?
     private var connection: NWConnection?
     private var buffer = Data()
-    private var watchdog: Timer?
+    private var watchdog: Task<Void, Never>?
     private var lastInbound = Date.distantPast
     private var retryID: UUID?
     // Live (non-retained) router fields with their arrival time on this Mac.
@@ -137,8 +137,14 @@ import Network
             connection.send(content: ShadowServerMQTT.connect(clientID: clientID, username: saved.username,
                                                               password: saved.password, keepAlive: Self.keepAlive),
                             completion: .idempotent)
-            watchdog = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.tick(connection) }
+            // App Nap defers AppKit timers in this background menu-bar app, which
+            // starved the keepalive; Task.sleep keeps time (as the gateway poller does).
+            watchdog = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    guard !Task.isCancelled else { return }
+                    self?.tick(connection)
+                }
             }
             receive(on: connection)
         case .failed, .waiting:
@@ -254,7 +260,7 @@ import Network
         routerBuildID = nil
         routerValues = [:]
         routerReading = nil
-        watchdog?.invalidate(); watchdog = nil
+        watchdog?.cancel(); watchdog = nil
         connection?.stateUpdateHandler = nil
         connection?.cancel(); connection = nil
         buffer = Data()
