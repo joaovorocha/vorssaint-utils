@@ -6,13 +6,13 @@ import Foundation
 enum TMobileSignalQuality: String, Codable, CaseIterable {
     case unknown, poor, fair, good, excellent
 
-    var label: String {
+    func label(_ strings: TMobileGatewayStrings) -> String {
         switch self {
-        case .unknown: return "Unavailable"
-        case .poor: return "Poor"
-        case .fair: return "Fair"
-        case .good: return "Good"
-        case .excellent: return "Excellent"
+        case .unknown: return strings.qualityUnavailable
+        case .poor: return strings.qualityPoor
+        case .fair: return strings.qualityFair
+        case .good: return strings.qualityGood
+        case .excellent: return strings.qualityExcellent
         }
     }
 }
@@ -22,12 +22,12 @@ enum TMobileSignalMetric: String, CaseIterable {
 
     var label: String { rawValue.uppercased() }
     var unit: String { self == .rsrp || self == .rssi ? "dBm" : "dB" }
-    var explanation: String {
+    func explanation(_ strings: TMobileGatewayStrings) -> String {
         switch self {
-        case .rsrp: return "Reference signal power. A less negative value means a stronger cellular signal."
-        case .rsrq: return "Reference signal quality. A less negative value usually means cleaner reception."
-        case .rssi: return "Total received power, including interference and noise. Compare it on the same radio and bandwidth."
-        case .sinr: return "Signal compared with interference and noise. A higher value means a cleaner cellular link."
+        case .rsrp: return strings.rsrpExplanation
+        case .rsrq: return strings.rsrqExplanation
+        case .rssi: return strings.rssiExplanation
+        case .sinr: return strings.sinrExplanation
         }
     }
 }
@@ -63,46 +63,42 @@ enum TMobileGatewayDiagnostics {
         }
     }
 
-    static func quality(forRSRP value: Double?) -> String {
-        quality(for: value, metric: .rsrp).label
-    }
-
-    static func bandDescription(_ band: String) -> String? {
+    static func bandDescription(_ band: String, strings: TMobileGatewayStrings) -> String? {
         switch band.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "n41": return "2.5 GHz mid-band 5G; part of T-Mobile Ultra Capacity coverage."
-        case "n71": return "600 MHz low-band 5G; part of T-Mobile Extended Range coverage."
-        case "n2", "n25": return "1900 MHz mid-band 5G."
-        case "b4", "b66": return "1700/2100 MHz LTE; band 66 extends band 4."
-        case "b5": return "850 MHz LTE."
-        case "b12": return "700 MHz low-band LTE."
-        case "b71": return "600 MHz low-band LTE."
+        case "n41": return strings.bandN41
+        case "n71": return strings.bandN71
+        case "n2", "n25": return strings.bandN2
+        case "b4", "b66": return strings.bandB66
+        case "b5": return strings.bandB5
+        case "b12": return strings.bandB12
+        case "b71": return strings.bandB71
         default: return nil
         }
     }
 
-    static func tips(for snapshot: TMobileGatewaySnapshot) -> [String] {
+    static func tips(for snapshot: TMobileGatewaySnapshot, strings: TMobileGatewayStrings) -> [String] {
         let primary = snapshot.fiveG?.rsrp != nil ? snapshot.fiveG : snapshot.lte ?? snapshot.fiveG
         var result: [String] = []
         if let rsrp = primary?.rsrp, quality(for: rsrp, metric: .rsrp) == .poor {
-            result.append("Try several gateway positions, including a higher shelf or window. Compare readings after the connection settles.")
+            result.append(strings.tipWeakSignal)
         }
         if let sinr = primary?.sinr, sinr < 0 {
-            result.append("Interference exceeds the measured signal. Compare SINR and RSRQ in another position; more bars alone may not improve the link.")
+            result.append(strings.tipInterference)
         } else if let rsrq = primary?.rsrq, rsrq < -15 {
-            result.append("Signal quality is low. Compare RSRQ and SINR across several positions and at different times of day.")
+            result.append(strings.tipLowQuality)
         }
         if snapshot.fiveG == nil, snapshot.lte != nil {
-            result.append("Only LTE measurements are available. This does not prove a 5G outage; the gateway may not be reporting a current 5G connection.")
+            result.append(strings.tipLTEOnly)
         }
         if snapshot.roaming == true {
-            result.append("The gateway reports roaming. Check your service and coverage in T-Life if this is unexpected.")
+            result.append(strings.tipRoaming)
         }
         if primary?.bands.contains("n41") == true {
-            result.append("n41 is T-Mobile's 2.5 GHz mid-band 5G. It can offer capacity, but the band name does not predict your speed.")
+            result.append(strings.tipN41)
         } else if primary?.bands.contains("n71") == true {
-            result.append("n71 is T-Mobile's 600 MHz Extended Range 5G. Compare real performance instead of treating a band change as a fault.")
+            result.append(strings.tipN71)
         }
-        result.append("Use Ethernet for a comparison test to separate cellular reception from Wi-Fi issues. Signal ratings are approximate and do not measure internet speed.")
+        result.append(strings.tipEthernet)
         return result
     }
 

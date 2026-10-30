@@ -6,11 +6,21 @@ cd "$(dirname "$0")/.."
 task_temp="$(mktemp -d /private/tmp/tmobile-monitor-tests.XXXXXX)"
 trap 'rm -rf "$task_temp"' EXIT
 task_sdk="$(xcrun --show-sdk-path)"
+# The string catalog switches over every production language case.
+python3 - "$task_temp/AppLanguage.swift" <<'PY'
+import re
+import sys
+source = open("Sources/Vorssaint/Core/Localization.swift").read()
+cases = re.search(r"^enum AppLanguage: String, CaseIterable, Identifiable \{\n((?:    case .*\n)+)", source, re.M)
+assert cases, "Expected the AppLanguage case list"
+open(sys.argv[1], "w").write("enum AppLanguage: String, CaseIterable {\n" + cases.group(1) + "}\n")
+PY
 swiftc -Onone -sdk "$task_sdk" -module-cache-path "$task_temp/module-cache" \
     Sources/Vorssaint/Services/Metrics/TMobileGatewaySupport.swift \
     Sources/Vorssaint/Services/Metrics/TMobileGatewayConnectedRadioSupport.swift \
     Sources/Vorssaint/Services/Metrics/TMobileGatewayService.swift \
     Sources/Vorssaint/Services/Metrics/TMobileGatewayMenuBarSupport.swift \
+    Sources/Vorssaint/Core/TMobileGatewayStrings.swift "$task_temp/AppLanguage.swift" \
     Sources/Vorssaint/Services/Metrics/TMobileGatewayMonitor.swift \
     Tests/Fixtures/TMobileGatewayMonitorHarness.swift -o "$task_temp/tests"
 "$task_temp/tests"

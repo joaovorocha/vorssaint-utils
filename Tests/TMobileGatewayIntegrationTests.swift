@@ -25,6 +25,15 @@ enum TMobileGatewayIntegrationTests {
             suite.expect(!fields.isEmpty && fields.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty },
                          "gateway labels and recovery instructions exist for \(language.rawValue)")
         }
+        let english = Mirror(reflecting: TMobileGatewayStrings.localized(.enUS)).children
+        for language in AppLanguage.allCases {
+            let localized = Mirror(reflecting: TMobileGatewayStrings.localized(language)).children
+            for (base, field) in zip(english, localized) where base.label?.hasSuffix("Format") == true {
+                let placeholders = { (value: Any) in (value as? String)?.components(separatedBy: "%@").count }
+                suite.expect(placeholders(base.value) == placeholders(field.value),
+                             "\(base.label ?? "") keeps its placeholders in \(language.rawValue)")
+            }
+        }
         for language in info?["CFBundleLocalizations"] as? [String] ?? [] {
             let localized = language == "en" ? info
                 : NSDictionary(contentsOfFile: "Resources/\(language).lproj/InfoPlist.strings")

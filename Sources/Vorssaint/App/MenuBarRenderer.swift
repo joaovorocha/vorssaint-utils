@@ -68,7 +68,7 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
         case .connectedDevices: return FeatureStrings.connectedDevices(L10n.shared.language).title
         case .power: return strings.monitorShowPowerLabel
         case .fanSpeed: return FeatureStrings.fanControl(L10n.shared.language).menuBarTitle
-        case .tMobile: return "T-Mobile connection"
+        case .tMobile: return TMobileGatewayStrings.localized(L10n.shared.language).connectionTitle
         }
     }
 
@@ -482,7 +482,8 @@ enum MenuBarRenderer {
                                                 pressure: memoryStyle.showsDot ? snapshot.memoryPressure : nil)])
                 }
             case .tMobile:
-                groups.append([.cellularBlock(TMobileGatewayMenuBarSupport.connection(snapshot: gatewaySnapshot), style: style)])
+                groups.append([.cellularBlock(TMobileGatewayMenuBarSupport.connection(
+                    snapshot: gatewaySnapshot, strings: .localized(L10n.shared.language)), style: style)])
             case .network:
                 if let down = snapshot.netDownBytesPerSec, let up = snapshot.netUpBytesPerSec {
                     groups.append([.networkBlock(down: MetricFormat.networkRateCompact(down),

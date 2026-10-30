@@ -28,15 +28,15 @@ struct TMobileGatewayMenuBarComponents: OptionSet {
         return next.isEmpty ? current : Self.sanitized(next.rawValue)
     }
 
-    var summary: String {
+    func summary(_ strings: TMobileGatewayStrings) -> String {
         switch Self.sanitized(rawValue) {
-        case .technology: return "Technology only"
-        case .bars: return "Signal bars only"
-        case .bands: return "Bands only"
-        case [.technology, .bars]: return "Technology & bars"
-        case [.technology, .bands]: return "Technology & bands"
-        case [.bars, .bands]: return "Bars & bands"
-        default: return "Technology, bars & bands"
+        case .technology: return strings.summaryTechnology
+        case .bars: return strings.summaryBars
+        case .bands: return strings.summaryBands
+        case [.technology, .bars]: return strings.summaryTechnologyBars
+        case [.technology, .bands]: return strings.summaryTechnologyBands
+        case [.bars, .bands]: return strings.summaryBarsBands
+        default: return strings.summaryAll
         }
     }
 }
@@ -49,10 +49,9 @@ enum TMobileGatewayMenuBarSupport {
         let accessibilityValue: String
     }
 
-    static func connection(snapshot: TMobileGatewaySnapshot?) -> ConnectionDisplay {
+    static func connection(snapshot: TMobileGatewaySnapshot?, strings: TMobileGatewayStrings) -> ConnectionDisplay {
         guard let active = TMobileGatewayConnectedRadioSupport.select(from: snapshot) else {
-            return .init(badge: "—", bands: "", bars: nil,
-                         accessibilityValue: "T-Mobile connection: current radio unavailable")
+            return .init(badge: "—", bands: "", bars: nil, accessibilityValue: strings.connectionUnavailable)
         }
         // T-Mobile's published network table classifies these NR bands as UC.
         // This is a band-based label, not a gateway-reported UC flag or speed.
@@ -63,11 +62,12 @@ enum TMobileGatewayMenuBarSupport {
         let bands = String(active.bands.prefix(3).joined(separator: "+").prefix(24))
             + (active.bands.count > 3 ? "+…" : "")
         let bars = active.radio.bars.flatMap { (0...5).contains($0) ? $0 : nil }
-        let spokenBars = bars.map { "\($0) of 5 signal bars" } ?? "Signal unavailable"
-        let spokenBands = active.bands.isEmpty ? "Band not reported" : "Reported bands \(active.bands.joined(separator: ", "))"
-        let inference = uc ? ", UC inferred from the reported band" : ""
+        let spokenBars = bars.map { String(format: strings.spokenBarsFormat, String($0)) } ?? strings.signalUnavailable
+        let spokenBands = active.bands.isEmpty ? strings.bandNotReported
+            : String(format: strings.reportedBandsFormat, active.bands.joined(separator: ", "))
+        let spoken = String(format: strings.connectionSpokenFormat, badge, spokenBands, spokenBars)
         return .init(badge: badge, bands: bands, bars: bars,
-                     accessibilityValue: "T-Mobile connection: \(badge), \(spokenBands), \(spokenBars)\(inference)")
+                     accessibilityValue: spoken + (uc ? strings.ucInferred : ""))
     }
 
     /// The same decision serves the runtime and tests. Merely opening settings

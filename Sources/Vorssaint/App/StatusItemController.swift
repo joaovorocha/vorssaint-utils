@@ -574,7 +574,7 @@ final class StatusItemController {
         }
 
         let gatewayAccessibility = metrics.contains(where: \.isTMobileGateway)
-            ? TMobileGatewayMenuBarSupport.connection(snapshot: gatewaySnapshot).accessibilityValue : ""
+            ? TMobileGatewayMenuBarSupport.connection(snapshot: gatewaySnapshot, strings: gatewayStrings).accessibilityValue : ""
         // nil keeps AppKit's default label when no gateway reading is pinned.
         button.setAccessibilityLabel(gatewayAccessibility.isEmpty ? nil : "\(AppInfo.name), \(gatewayAccessibility)")
         let toolTip: String
@@ -650,7 +650,7 @@ final class StatusItemController {
                 button.imagePosition = .noImage
             }
             let gatewayTitle = group.metrics.contains(where: \.isTMobileGateway)
-                ? TMobileGatewayMenuBarSupport.connection(snapshot: gatewaySnapshot).accessibilityValue : nil
+                ? TMobileGatewayMenuBarSupport.connection(snapshot: gatewaySnapshot, strings: gatewayStrings).accessibilityValue : nil
             let toolTip = gatewayTitle ?? group.title
             if button.toolTip != toolTip { button.toolTip = toolTip }
             // The drawn indicator is an image; speak its reading instead.
@@ -663,6 +663,8 @@ final class StatusItemController {
     private var gatewaySnapshot: TMobileGatewaySnapshot? {
         MainActor.assumeIsolated { TMobileGatewayMonitor.shared.service.snapshot }
     }
+
+    private var gatewayStrings: TMobileGatewayStrings { .localized(L10n.shared.language) }
 
     /// How the enabled metrics split into separate items. Static so the
     /// Settings preview draws the same split the bar does.

@@ -38,8 +38,19 @@ folder.joinpath("Boundaries.swift").write_text("import SwiftUI\n"
     + '\nfinal class FixtureValueBox { var components = 7 }\n'
     + 'struct FixtureToggle: View {\nlet box = FixtureValueBox()\n'
     + 'var gatewayComponents: Int { get { box.components } nonmutating set { box.components = newValue } }\n'
+    + 'var gatewayStrings: TMobileGatewayStrings { .localized(.enUS) }\n'
     + 'var body: some View { gatewayComponentToggle("Technology", component: .technology) }\n'
     + toggle + "\n}\n")
+PY
+
+# The string catalog switches over every production language case.
+python3 - "$task_temp/AppLanguage.swift" <<'PY'
+import re
+import sys
+source = open("Sources/Vorssaint/Core/Localization.swift").read()
+cases = re.search(r"^enum AppLanguage: String, CaseIterable, Identifiable \{\n((?:    case .*\n)+)", source, re.M)
+assert cases, "Expected the AppLanguage case list"
+open(sys.argv[1], "w").write("enum AppLanguage: String, CaseIterable {\n" + cases.group(1) + "}\n")
 PY
 
 xcrun swiftc -j1 -disable-batch-mode -parse-as-library -Onone -sdk "$task_sdk" \
@@ -47,6 +58,7 @@ xcrun swiftc -j1 -disable-batch-mode -parse-as-library -Onone -sdk "$task_sdk" \
     Sources/Vorssaint/Services/Metrics/TMobileGatewaySupport.swift \
     Sources/Vorssaint/Services/Metrics/TMobileGatewayConnectedRadioSupport.swift \
     "$task_temp/MenuBarSupport.swift" "$task_temp/Boundaries.swift" \
+    Sources/Vorssaint/Core/TMobileGatewayStrings.swift "$task_temp/AppLanguage.swift" \
     Sources/Vorssaint/App/TMobileGatewayIndicatorDrawing.swift \
     Tests/Fixtures/TMobileGatewayAppearanceHarness.swift -o "$task_temp/tests"
 "$task_temp/tests"

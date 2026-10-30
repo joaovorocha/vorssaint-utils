@@ -30,7 +30,7 @@ enum FixturePreferences {
         for raw in 1...7 {
             FixturePreferences.defaults.values[Components.defaultsKey] = raw
             let components = Components.current
-            check(components.rawValue == raw && !components.summary.isEmpty,
+            check(components.rawValue == raw && !components.summary(TMobileGatewayStrings.localized(.enUS)).isEmpty,
                   "Every nonempty combination has a stable preference and summary")
             for choice in choices {
                 let removed = components.setting(choice, enabled: false)
@@ -39,13 +39,13 @@ enum FixturePreferences {
                 check(components.setting(choice, enabled: true).contains(choice), "Any missing piece can be re-enabled")
             }
         }
-        check(Components.bars.summary == "Signal bars only" && Components.bands.summary == "Bands only"
-              && Components.technology.summary == "Technology only", "Single-piece options explain their visual result")
+        check(Components.bars.summary(TMobileGatewayStrings.localized(.enUS)) == "Signal bars only" && Components.bands.summary(TMobileGatewayStrings.localized(.enUS)) == "Bands only"
+              && Components.technology.summary(TMobileGatewayStrings.localized(.enUS)) == "Technology only", "Single-piece options explain their visual result")
 
         let uc = connection(bands: ["n41"], bars: 2)
         let fiveG = connection(bands: ["n71"], bars: 5)
         let lte = connection(bands: [], bars: 4, fiveG: false)
-        let unavailable = TMobileGatewayMenuBarSupport.connection(snapshot: nil)
+        let unavailable = TMobileGatewayMenuBarSupport.connection(snapshot: nil, strings: TMobileGatewayStrings.localized(.enUS))
         check(uc.badge == "5G UC" && fiveG.badge == "5G" && lte.badge == "LTE",
               "Technology still follows the actual selected radio and existing UC band inference")
         for display in [uc, fiveG, lte, unavailable] {
@@ -110,7 +110,7 @@ enum FixturePreferences {
         let radio = TMobileRadioSignal(bars: bars, bands: bands, rsrp: -95, rsrq: nil, rssi: nil, sinr: nil)
         let snapshot = TMobileGatewaySnapshot(model: nil, firmware: nil, uptime: nil,
             registration: "registered", roaming: false, lte: fiveG ? nil : radio, fiveG: fiveG ? radio : nil)
-        return TMobileGatewayMenuBarSupport.connection(snapshot: snapshot)
+        return TMobileGatewayMenuBarSupport.connection(snapshot: snapshot, strings: TMobileGatewayStrings.localized(.enUS))
     }
 
     /// Draw into a private bitmap without creating NSApplication or a window.

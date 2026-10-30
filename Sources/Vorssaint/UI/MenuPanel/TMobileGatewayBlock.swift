@@ -43,7 +43,7 @@ struct TMobileGatewayBlock: View {
                     } else {
                         status
                     }
-                    Button("Signal guide & tips") { showingTips = true }
+                    Button(strings.signalGuide) { showingTips = true }
                         .buttonStyle(.bordered).controlSize(.small)
                 }
             }
@@ -55,7 +55,7 @@ struct TMobileGatewayBlock: View {
             lastUpdated = snapshot == nil ? nil : Date()
         }
         .onDisappear { TMobileGatewayMonitor.shared.setPanelVisible(false) }
-        .sheet(isPresented: $showingTips) { TMobileGatewayTipsView(snapshot: service.snapshot) }
+        .sheet(isPresented: $showingTips) { TMobileGatewayTipsView(snapshot: service.snapshot, strings: strings) }
     }
 
     private func updatePolling() {
@@ -103,7 +103,7 @@ struct TMobileGatewayBlock: View {
             }
             .font(.system(size: 10.5))
             .foregroundStyle(.secondary)
-            ForEach(TMobileGatewayRadioPresentation.sections(snapshot)) { section in
+            ForEach(TMobileGatewayRadioPresentation.sections(snapshot, strings: strings)) { section in
                 radioReadings(section)
             }
             HStack(spacing: 6) {
@@ -131,8 +131,8 @@ struct TMobileGatewayBlock: View {
                     }
                         .buttonStyle(.plain)
                         .disabled(service.phase == .loading)
-                        .help("Refresh radio metrics")
-                        .accessibilityLabel(service.phase == .loading ? "Refreshing radio metrics" : "Refresh radio metrics")
+                        .help(strings.refresh)
+                        .accessibilityLabel(service.phase == .loading ? strings.refreshing : strings.refresh)
                 }
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
@@ -160,15 +160,15 @@ struct TMobileGatewayBlock: View {
                 }
                 Spacer(minLength: 0)
                 if let bars = radio.bars, section.rows.contains(where: { $0.id == .bars }) {
-                    TMobileSignalBars(bars: bars, radio: section.title,
+                    TMobileSignalBars(bars: bars, radio: section.title, strings: strings,
                                       quality: TMobileGatewayDiagnostics.quality(for: radio.rsrp, metric: .rsrp))
                 }
             }
             HStack(alignment: .top, spacing: 16) {
-                if let row = TMobileGatewayRadioPresentation.measurementRow(radio, metric: .rsrp) {
+                if let row = TMobileGatewayRadioPresentation.measurementRow(radio, metric: .rsrp, strings: strings) {
                     metric(row)
                 }
-                if let row = TMobileGatewayRadioPresentation.measurementRow(radio, metric: .sinr) {
+                if let row = TMobileGatewayRadioPresentation.measurementRow(radio, metric: .sinr, strings: strings) {
                     metric(row)
                 }
             }
@@ -221,7 +221,7 @@ struct TMobileGatewayAddressEditor: View {
             Button(strings.save) { save() }
                 .disabled(!valid)
             Divider()
-            Text("Show the connected radio, bars and bands together in Settings → Monitor → In the menu bar → T-Mobile connection.")
+            Text(strings.menuBarHint)
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
@@ -239,9 +239,11 @@ struct TMobileGatewayAddressEditor: View {
 private struct TMobileSignalBars: View {
     let bars: Int
     let radio: String
+    let strings: TMobileGatewayStrings
     let quality: TMobileSignalQuality
     @Environment(\.colorScheme) private var colorScheme
     var body: some View {
+        let spoken = String(format: strings.barsSpokenFormat, radio, String(bars))
         HStack(alignment: .bottom, spacing: 2) {
             ForEach(1...5, id: \.self) { index in
                 RoundedRectangle(cornerRadius: 1)
@@ -251,8 +253,9 @@ private struct TMobileSignalBars: View {
             Text("\(bars)/5").padding(.leading, 3)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(radio) signal, \(bars) of 5 bars" + (quality == .unknown ? "" : "; RSRP quality \(quality.label)"))
-        .help("The gateway reports the bar count. Color follows its approximate RSRP quality rating.")
+        .accessibilityLabel(quality == .unknown ? spoken
+                            : spoken + "; " + String(format: strings.rsrpQualityFormat, quality.label(strings)))
+        .help(strings.barsHelp)
     }
 }
 
@@ -269,18 +272,19 @@ extension TMobileSignalQuality {
 
 private struct TMobileGatewayTipsView: View {
     let snapshot: TMobileGatewaySnapshot?
+    let strings: TMobileGatewayStrings
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Text("Cellular signal guide").font(.title2.bold()); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+            HStack { Text(strings.guideTitle).font(.title2.bold()); Spacer(); Button(strings.done) { dismiss() }.keyboardShortcut(.cancelAction) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Bars are reported by your gateway. The ratings below are approximate placement guidance, not T-Mobile ratings or a speed prediction.")
+                    Text(strings.guideIntro)
                         .font(.callout).foregroundStyle(.secondary)
                     ForEach(TMobileSignalMetric.allCases, id: \.self) { metric in
                         VStack(alignment: .leading, spacing: 5) {
                             Text("\(metric.label) · \(metric.unit)").font(.headline)
-                            Text(metric.explanation)
+                            Text(metric.explanation(strings))
                             HStack(spacing: 20) {
                                 guideReading("LTE", radio: snapshot?.lte, metric: metric)
                                 guideReading("5G", radio: snapshot?.fiveG, metric: metric)
@@ -289,25 +293,25 @@ private struct TMobileGatewayTipsView: View {
                     }
                     if let snapshot {
                         Divider()
-                        Text("Tips for these readings").font(.headline)
-                        ForEach(Array(TMobileGatewayDiagnostics.tips(for: snapshot).enumerated()), id: \.offset) { index, tip in Text("\(index + 1). \(tip)") }
+                        Text(strings.tipsHeading).font(.headline)
+                        ForEach(Array(TMobileGatewayDiagnostics.tips(for: snapshot, strings: strings).enumerated()), id: \.offset) { index, tip in Text("\(index + 1). \(tip)") }
                         ForEach(Array(Set((snapshot.lte?.bands ?? []) + (snapshot.fiveG?.bands ?? []))).sorted(), id: \.self) { band in
-                            if let description = TMobileGatewayDiagnostics.bandDescription(band) { Text("\(band): \(description)") }
+                            if let description = TMobileGatewayDiagnostics.bandDescription(band, strings: strings) { Text("\(band): \(description)") }
                         }
-                        if let apn = snapshot.apn { Text("Reported APN: \(apn)").font(.caption) }
+                        if let apn = snapshot.apn { Text("\(strings.reportedAPN): \(apn)").font(.caption) }
                     }
                     Divider()
-                    Text("Band choices in the menu bar select what you see. The gateway chooses the connected band; this app does not change it. Monthly account usage is not provided by this local status endpoint.")
+                    Text(strings.guideFooter)
                         .font(.callout).foregroundStyle(.secondary)
-                    Link("T-Mobile network and band information", destination: URL(string: "https://www.t-mobile.com/support/coverage/t-mobile-network")!)
-                    Link("T-Mobile gateway placement help", destination: URL(string: "https://www.t-mobile.com/support/home-internet/t-mobile-gateway/network-speed")!)
-                    Link("T-Mobile coverage map", destination: URL(string: "https://www.t-mobile.com/coverage/coverage-map")!)
+                    Link(strings.networkInfoLink, destination: URL(string: "https://www.t-mobile.com/support/coverage/t-mobile-network")!)
+                    Link(strings.placementLink, destination: URL(string: "https://www.t-mobile.com/support/home-internet/t-mobile-gateway/network-speed")!)
+                    Link(strings.coverageMapLink, destination: URL(string: "https://www.t-mobile.com/coverage/coverage-map")!)
                 }.textSelection(.enabled).padding(.trailing, 8)
             }
         }.padding(20).frame(width: 590, height: 660)
     }
     @ViewBuilder private func guideReading(_ label: String, radio: TMobileRadioSignal?, metric: TMobileSignalMetric) -> some View {
-        if let radio, let row = TMobileGatewayRadioPresentation.measurementRow(radio, metric: metric) {
+        if let radio, let row = TMobileGatewayRadioPresentation.measurementRow(radio, metric: metric, strings: strings) {
             Text("\(label): \(row.value)\(row.qualityLabel.map { " · " + $0 } ?? "")")
         }
     }

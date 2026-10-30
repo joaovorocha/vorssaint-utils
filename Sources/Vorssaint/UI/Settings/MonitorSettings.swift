@@ -413,7 +413,7 @@ private struct MenuBarMetricTile: View {
             return Defaults.sanitizedMenuBarMemoryStyle(memoryStyle) != "percent"
                 ? l10n.s.monitorMemoryPressureDot : FeatureStrings.mouseClickDebounce(l10n.language).moreOptions
         case .network: return uploadFirst ? "↑ ↓" : "↓ ↑"
-        case .tMobile: return TMobileGatewayMenuBarComponents.sanitized(gatewayComponents).summary
+        case .tMobile: return TMobileGatewayMenuBarComponents.sanitized(gatewayComponents).summary(gatewayStrings)
         case .diskUsage:
             switch diskStyle {
             case DiskMenuBarStyle.free: return l10n.s.diskMenuBarAvailableSpace
@@ -439,14 +439,14 @@ private struct MenuBarMetricTile: View {
                                                  isOn: $uploadFirst))
         case .tMobile:
             return AnyView(VStack(alignment: .leading, spacing: 10) {
-                gatewayComponentToggle("Technology", component: .technology)
-                gatewayComponentToggle("Signal bars", component: .bars)
-                gatewayComponentToggle("Bands", component: .bands)
-                Text("Technology shows LTE, 5G or 5G UC for the current connection. UC is inferred from reported bands.")
+                gatewayComponentToggle(gatewayStrings.technology, component: .technology)
+                gatewayComponentToggle(gatewayStrings.signalBars, component: .bars)
+                gatewayComponentToggle(gatewayStrings.bands, component: .bands)
+                Text(gatewayStrings.technologyHelp)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Keep at least one selected. Use the T-Mobile checkmark to hide the item.")
+                Text(gatewayStrings.keepOneSelected)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -473,8 +473,10 @@ private struct MenuBarMetricTile: View {
                 .setting(component, enabled: $0).rawValue }))
             .toggleStyle(.checkbox)
             .disabled(selected == component)
-            .help(selected == component ? "Keep at least one selected, or hide the T-Mobile item with its checkmark." : title)
+            .help(selected == component ? gatewayStrings.keepOneHelp : title)
     }
+
+    private var gatewayStrings: TMobileGatewayStrings { .localized(l10n.language) }
 }
 
 private struct MenuBarUsageBarSettings: View {

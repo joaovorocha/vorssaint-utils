@@ -95,14 +95,14 @@ enum TMobileGatewayTests {
         suite.expect(TMobileGatewayDiagnostics.lteENodeBID(cellID: 68_719_476_735) == nil
                      && TMobileGatewayDiagnostics.lteSectorID(cellID: 268_435_456) == nil,
                      "LTE estimate rejects IDs outside the LTE range instead of truncating NR data")
-        suite.expect(TMobileGatewayDiagnostics.bandDescription("N41")?.contains("2.5 GHz") == true
-                     && TMobileGatewayDiagnostics.bandDescription("n71")?.contains("600 MHz") == true
-                     && TMobileGatewayDiagnostics.bandDescription("n99") == nil,
+        suite.expect(TMobileGatewayDiagnostics.bandDescription("N41", strings: TMobileGatewayStrings.localized(.enUS))?.contains("2.5 GHz") == true
+                     && TMobileGatewayDiagnostics.bandDescription("n71", strings: TMobileGatewayStrings.localized(.enUS))?.contains("600 MHz") == true
+                     && TMobileGatewayDiagnostics.bandDescription("n99", strings: TMobileGatewayStrings.localized(.enUS)) == nil,
                      "known bands have sourced context while unknown bands get no guessed frequency")
         let weak = TMobileGatewaySnapshot(model: nil, firmware: nil, uptime: nil, registration: nil, roaming: false,
                                          lte: TMobileRadioSignal(bars: 5, bands: ["b66"], rsrp: -118,
                                                                 rsrq: -18, rssi: -60, sinr: -2), fiveG: nil)
-        let tips = TMobileGatewayDiagnostics.tips(for: weak)
+        let tips = TMobileGatewayDiagnostics.tips(for: weak, strings: TMobileGatewayStrings.localized(.enUS))
         suite.expect(tips.contains { $0.contains("higher shelf") }
                      && tips.contains { $0.contains("Interference") }
                      && tips.contains { $0.contains("does not prove a 5G outage") },
@@ -110,7 +110,7 @@ enum TMobileGatewayTests {
         let fiveG = TMobileGatewaySnapshot(model: nil, firmware: nil, uptime: nil, registration: nil, roaming: false,
                                           lte: weak.lte, fiveG: TMobileRadioSignal(bars: 1, bands: ["n41"],
                                                                                  rsrp: -80, rsrq: -6, rssi: -55, sinr: 25))
-        let fiveGTips = TMobileGatewayDiagnostics.tips(for: fiveG)
+        let fiveGTips = TMobileGatewayDiagnostics.tips(for: fiveG, strings: TMobileGatewayStrings.localized(.enUS))
         suite.expect(!fiveGTips.contains { $0.contains("higher shelf") }
                      && fiveGTips.contains { $0.contains("band name does not predict") },
                      "tips use available 5G measurements and avoid promising band-based performance")
