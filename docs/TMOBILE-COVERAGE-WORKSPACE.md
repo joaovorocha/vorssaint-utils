@@ -56,7 +56,7 @@ Both gateway administrator sign-in forms have **Remember on this Mac**, **Use sa
 
 ## Storage and future Shadow connection
 
-Sessions stay on this Mac until explicitly deleted. The footer shows local storage status; there is no server connection status because this build has no server connector. Export writes JSON to a chosen path and retains the archive. Exports include original locations, corrections and radio identifiers. The versioned cursor/batch contract supports a future Shadow server connector, but there is no server endpoint, uploader or automatic sync. Future remote access must remain client-owned and tailnet-only.
+Sessions stay on this Mac until explicitly deleted. The footer shows local storage status and, in Shadow Utilities builds, the Shadow server link. Data & settings > Shadow server subscribes read-only over MQTT to the server's tailnet address (100.64.0.0/10 or *.ts.net only) and shows the server's tower estimates and serving cell on the map. The server polls the gateway; the MQTT password stays in the Keychain. Export writes JSON to a chosen path and retains the archive. Exports include original locations, corrections and radio identifiers. The versioned cursor/batch contract supports a future Shadow server connector, but there is no uploader or automatic sync of local sessions. Future remote access must remain client-owned and tailnet-only.
 
 See [archive format and recovery](TMOBILE-COVERAGE-ARCHIVE.md). Advanced administrator radio readings remain window-scoped and are not added to the public measurement archive. Existing rolling history remains a separate legacy archive.
 

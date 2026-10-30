@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Shadow Utilities
+- Connects Coverage to the Shadow server: a read-only, tailnet-only MQTT link shows the server's tower estimates and serving cell on the map, with live connection status in the footer.
 - Removes the placeholder Shadow server warning from Coverage and keeps the local-storage status visible.
 - Enlarges the FCC model legend with a high-contrast blue scale, explicit weaker/stronger dBm labels and a separate signal-unavailable swatch; preserves the map's signal scale and transparency.
 - Loads FCC coverage with one action: checks saved Keychain access first, asks for a token only when needed, reuses verified downloads and returns to Map after loading the selected area. Removes Save-panel filename conflicts and keeps progress/cancellation available across tabs.

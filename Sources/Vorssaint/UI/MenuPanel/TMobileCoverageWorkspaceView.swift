@@ -12,6 +12,9 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
     @ObservedObject private var references = TMobileCoverageReferenceStore.shared
     @ObservedObject private var gateway = TMobileGatewayMonitor.shared.service
     @StateObject private var fccFlow = TMobileFCCCoverageModel()
+    #if SHADOW_UTILITIES
+    @ObservedObject private var shadow = ShadowServerConnection.shared
+    #endif
     let close: () -> Void
     let radioDetails: () -> RadioDetails
     @Environment(\.colorScheme) private var colorScheme
@@ -73,8 +76,47 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
     }
     private var mapTowers: [TMobileTowerPin] {
         var seen = Set<MapReferenceKey>()
-        return (pins.towers + lookupCells).filter { seen.insert(MapReferenceKey($0)).inserted }
+        #if SHADOW_UTILITIES
+        let server = ([shadow.serving].compactMap { $0 }.map { serverPin($0, serving: true) }
+            + shadow.towers.map { serverPin($0, serving: false) }).filter(\.isValid)
+        #else
+        let server: [TMobileTowerPin] = []
+        #endif
+        return (pins.towers + lookupCells + server).filter { seen.insert(MapReferenceKey($0)).inserted }
     }
+
+    #if SHADOW_UTILITIES
+    private func serverPin(_ tower: ShadowServerTower, serving: Bool) -> TMobileTowerPin {
+        var source = "Shadow server · \(tower.source ?? "server") estimate"
+        if let samples = tower.samples { source += " · \(samples) samples" }
+        if let rsrp = tower.rsrp { source += " · \(serving ? "" : "best ")\(rsrp) dBm" }
+        return TMobileTowerPin(name: serving ? "Serving cell · Shadow server" : "Shadow server \(tower.band ?? tower.radio) cell",
+                               latitude: tower.latitude, longitude: tower.longitude, bands: tower.band ?? "",
+                               cellID: tower.cell, radio: tower.radio.lowercased() == "5g" ? .nr : .lte, provenance: source)
+    }
+
+    private var shadowControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("The Shadow server talks to the T-Mobile gateway and publishes tower estimates. This Mac only reads them over your tailnet.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            TextField("Server tailnet address (100.x.y.z or name.ts.net)", text: $shadow.host)
+            TextField("Port", text: $shadow.port).frame(width: 120)
+            TextField("MQTT username", text: $shadow.username)
+            SecureField(shadow.hasSavedPassword ? "Password saved in Keychain" : "MQTT password", text: $shadow.password)
+            HStack {
+                if shadow.isActive {
+                    Button("Disconnect") { shadow.disconnect() }
+                } else {
+                    Button("Connect") { shadow.connect() }.disabled(!shadow.canConnect)
+                }
+                if shadow.hasSavedPassword { Button("Forget password") { shadow.forgetPassword() } }
+                Spacer()
+                Text("\(shadow.towers.count) server towers").foregroundStyle(.secondary)
+            }
+            Label(shadow.statusText, systemImage: shadow.state == .connected ? "network" : "network.slash").font(.caption)
+        }.textFieldStyle(.roundedBorder)
+    }
+    #endif
 
     var body: some View {
         VStack(spacing: 0) {
@@ -110,6 +152,9 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
                     VStack(alignment: .leading, spacing: 20) {
                         fccControls
                         Divider()
+                        #if SHADOW_UTILITIES
+                        DisclosureGroup("Shadow server") { shadowControls.padding(.top, 10) }
+                        #endif
                         DisclosureGroup("Recording settings") { status.padding(.top, 10) }
                         DisclosureGroup("Tower references", isExpanded: $expandedTowers) { referenceControls.padding(.top, 10) }
                         DisclosureGroup("OpenCelliD cell lookup", isExpanded: $expandedCells) {
@@ -133,9 +178,17 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
                 Label("Saved on this Mac · Keep until deleted", systemImage: "internaldrive")
                     .help("Coverage sessions are stored on this Mac until you delete them.")
                 Spacer()
+                #if SHADOW_UTILITIES
+                Button { section = .data } label: {
+                    Label(shadow.statusText, systemImage: shadow.state == .connected ? "network" : "network.slash")
+                }.buttonStyle(.plain).help("Shadow server connection settings")
+                #endif
             }.font(.caption).foregroundStyle(.secondary).padding(12)
         }
         .frame(minWidth: 860, minHeight: 700)
+        #if SHADOW_UTILITIES
+        .onAppear { shadow.resume() }
+        #endif
         .onDisappear { fccFlow.close(); lookupCells = []; lookupRegion = nil }
         .onChange(of: store.selectedSessionID) { _, _ in
             selectedID = nil; selectedTowerID = nil; lookupRegion = nil; latitude = ""; longitude = ""
