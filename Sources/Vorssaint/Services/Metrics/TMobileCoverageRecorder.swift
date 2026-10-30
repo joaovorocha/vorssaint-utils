@@ -146,6 +146,11 @@ import IOKit
         sessionStartedAt = now
         defaults.set(automaticParkedTestsEnabled, forKey: Self.automaticTestsKey)
         status = "Recording on this Mac"
+        #if SHADOW_UTILITIES
+        // Recording can start at launch with no Coverage window open, so bring
+        // up a previously enabled server link here rather than only in that view.
+        ShadowServerConnection.shared.resume()
+        #endif
         observeLid()
         if !isSuspended {
             location.start()
