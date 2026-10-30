@@ -21,11 +21,12 @@ import Foundation
         expect(first == [.connAck(returnCode: 0)], "CONNACK decoded, partial PUBLISH kept")
         buffer.append(publish)
         let second = (try? ShadowServerMQTT.decode(&buffer)) ?? []
-        expect(second == [.publish(topic: "x/y/z", payload: payload)], "PUBLISH reassembled")
+        expect(second == [.publish(topic: "x/y/z", payload: payload, retained: false)], "PUBLISH reassembled")
         expect(buffer.isEmpty, "buffer drained")
 
-        var qos1 = Data([0x32, 7, 0, 1, 0x74, 0, 9, 0x7B, 0x7D])
-        expect((try? ShadowServerMQTT.decode(&qos1)) == [.publish(topic: "t", payload: Data("{}".utf8))], "QoS 1 packet id skipped")
+        var qos1 = Data([0x33, 7, 0, 1, 0x74, 0, 9, 0x7B, 0x7D])
+        expect((try? ShadowServerMQTT.decode(&qos1)) == [.publish(topic: "t", payload: Data("{}".utf8), retained: true)],
+               "QoS 1 packet id skipped, retain flag read")
         var bad = Data([0x30, 0xFF, 0xFF, 0xFF, 0xFF, 0x01])
         expect((try? ShadowServerMQTT.decode(&bad)) == nil, "5-byte length rejected")
         var huge = Data([0x30, 0xFF, 0xFF, 0xFF, 0x7F])
@@ -53,6 +54,27 @@ import Foundation
         expect(ShadowServerTower.one(Data(#"{"cell":"5g:2","radio":"5g","band":"n25","lat":37.7,"lon":-122.4,"rsrp":-101}"#.utf8))?.rsrp == -101,
                "serving tower parsed")
         expect(ShadowServerTower.list(Data("not json".utf8)) == nil, "bad JSON ignored")
+
+        // Router reading rebuilt from per-field retained topics (synthetic values).
+        func values(_ raw: [String: String]) -> [String: Any] {
+            raw.reduce(into: [:]) { $0[$1.key] = ShadowServerRouter.value(Data($1.value.utf8)) }
+        }
+        let fields = ["signal/status": "\"ok\"", "signal/updated": "1700000000", "signal/registration": "\"registered\"",
+                      "signal/5g/band": "\"n41\"", "signal/5g/rsrp_dbm": "-108", "signal/5g/sinr_db": "8",
+                      "signal/5g/cell_id": "304", "cell/5g/bandwidth": "\"90M\"", "cell/5g/pci": "910",
+                      "cell/5g/supported_bands": "\"n25,n41\"", "signal/4g/band": "\"b66\"", "signal/4g/rsrp_dbm": "-115"]
+        let reading = ShadowServerRouter.reading(values(fields))
+        expect(reading?.date == Date(timeIntervalSince1970: 1_700_000_000), "router reading uses the server poll time")
+        expect(reading?.snapshot.fiveG?.rsrp == -108 && reading?.snapshot.fiveG?.bands == ["n41"]
+               && reading?.snapshot.fiveG?.bandwidthMHz == 90 && reading?.snapshot.fiveG?.physicalCellID == 910
+               && reading?.snapshot.fiveG?.supportedBands == ["n25", "n41"], "5G fields mapped")
+        expect(reading?.snapshot.lte?.rsrp == -115 && reading?.snapshot.registration == "registered", "LTE and generic fields mapped")
+        var stale = fields; stale["signal/status"] = "\"error\""
+        expect(ShadowServerRouter.reading(values(stale)) == nil, "server error status yields no reading")
+        var sentinel = fields; sentinel["signal/5g/rsrp_dbm"] = "0"; sentinel["signal/4g/rsrp_dbm"] = "0"
+        expect(ShadowServerRouter.reading(values(sentinel))?.snapshot.fiveG?.rsrp == nil, "gateway range checks still apply")
+        var noTime = fields; noTime["signal/updated"] = nil
+        expect(ShadowServerRouter.reading(values(noTime)) == nil, "reading without a poll time rejected")
 
         if failures.isEmpty { print("PASS: Shadow server MQTT codec, host gate and tower parsing") }
         else { failures.forEach { print("FAIL: \($0)") }; exit(1) }

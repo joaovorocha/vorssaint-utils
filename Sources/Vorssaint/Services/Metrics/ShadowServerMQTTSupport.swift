@@ -7,7 +7,8 @@ enum ShadowServerMQTT {
     enum Packet: Equatable {
         case connAck(returnCode: UInt8)
         case subAck(granted: [UInt8]) // 0x80 = topic refused
-        case publish(topic: String, payload: Data)
+        // `retained` = replayed from the broker's store at subscribe time, not a live publish.
+        case publish(topic: String, payload: Data, retained: Bool)
         case pingResp
         case other(type: UInt8)
     }
@@ -79,7 +80,7 @@ enum ShadowServerMQTT {
                   let topic = String(bytes: bytes[2..<offset], encoding: .utf8) else { throw DecodeError.malformed }
             if (header >> 1) & 0x03 > 0 { offset += 2 } // packet identifier for QoS 1/2
             guard bytes.count >= offset else { throw DecodeError.malformed }
-            return .publish(topic: topic, payload: Data(bytes[offset...]))
+            return .publish(topic: topic, payload: Data(bytes[offset...]), retained: header & 0x01 == 1)
         case 9:
             guard bytes.count >= 3 else { throw DecodeError.malformed }
             return .subAck(granted: Array(bytes[2...]))

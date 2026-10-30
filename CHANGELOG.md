@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Shadow Utilities
+- Records coverage from gateway readings relayed by the Shadow server while its feed is fresh, falling back to polling the gateway directly when the server link is off or stale.
 - Connects Coverage to the Shadow server: a read-only, tailnet-only MQTT link shows the server's tower estimates and serving cell on the map, with live connection status in the footer.
 - Removes the placeholder Shadow server warning from Coverage and keeps the local-storage status visible.
 - Enlarges the FCC model legend with a high-contrast blue scale, explicit weaker/stronger dBm labels and a separate signal-unavailable swatch; preserves the map's signal scale and transparency.

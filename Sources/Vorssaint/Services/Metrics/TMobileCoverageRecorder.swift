@@ -6,7 +6,8 @@ import IOKit
 
 /// Local-only coverage recording, started explicitly or by a saved launch
 /// opt-in. Each start creates a new session; no automatic archive resume,
-/// server connection, or background wake.
+/// upload, or background wake. Shadow Utilities may read gateway readings
+/// relayed by the Shadow server instead of polling the gateway itself.
 @MainActor final class TMobileCoverageRecorder: ObservableObject {
     static let shared = TMobileCoverageRecorder()
     static let automaticTestsKey = "tMobileCoverageAutomaticParkedTests"
@@ -34,6 +35,12 @@ import IOKit
     private var parking = TMobileCoverageParkedDetector()
     private var latestSnapshot: TMobileGatewaySnapshot?
     private var latestSnapshotDate: Date?
+    // While the Shadow server's feed is fresh it is the only source, so two
+    // sources never interleave readings in one session.
+    private var lastServerReadingAt: Date?
+    private var serverFeedIsFresh: Bool {
+        lastServerReadingAt.map { (0...30).contains(Date().timeIntervalSince($0)) } ?? false
+    }
     private var latestObservationID: UUID?
     private var lastCompletedTestObservationID: UUID?
     private var testContext: TMobileCoverageSpeedContext?
@@ -70,6 +77,11 @@ import IOKit
                       let date = notification.userInfo?["date"] as? Date else { return }
                 self?.received(snapshot: snapshot, at: date)
             }.store(in: &cancellables)
+        #if SHADOW_UTILITIES
+        ShadowServerConnection.shared.$routerReading.compactMap { $0 }.removeDuplicates()
+            .sink { [weak self] reading in self?.received(snapshot: reading.snapshot, at: reading.date, fromServer: true) }
+            .store(in: &cancellables)
+        #endif
         monitor.service.$snapshot.receive(on: DispatchQueue.main)
             .sink { [weak self] snapshot in
                 if snapshot == nil { self?.gatewayBecameUnavailable() }
@@ -183,12 +195,18 @@ import IOKit
         parkingStatus = "Start recording to detect a parked stop"
     }
 
-    private func received(snapshot: TMobileGatewaySnapshot, at date: Date) {
+    private func received(snapshot: TMobileGatewaySnapshot, at date: Date, fromServer: Bool = false) {
+        if !fromServer, serverFeedIsFresh { return }
         guard isRecording else { return }
+        // A source switch can deliver an older poll; the store accepts only forward time.
+        // A server poll is dated once, so an equal date is the same poll rebuilt.
+        if let latestSnapshotDate, fromServer ? date <= latestSnapshotDate : date < latestSnapshotDate { return }
         lidStateChanged()
         guard !isSuspended, let sessionStartedAt, date >= sessionStartedAt,
               TMobileGatewaySupport.isValidSnapshot(snapshot),
               (0...30).contains(Date().timeIntervalSince(date)) else { return }
+        // Only an accepted server reading may pause direct gateway readings.
+        if fromServer { lastServerReadingAt = Date() }
         let previousAddress = address
         preferencesChanged()
         guard previousAddress == address else { return }
@@ -207,6 +225,7 @@ import IOKit
     }
 
     private func gatewayBecameUnavailable() {
+        guard !serverFeedIsFresh else { return }
         latestSnapshot = nil
         latestSnapshotDate = nil
         latestObservationID = nil

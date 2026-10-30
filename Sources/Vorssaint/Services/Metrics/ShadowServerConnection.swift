@@ -13,6 +13,8 @@ import Network
     @Published private(set) var towers: [ShadowServerTower] = []
     @Published private(set) var serving: ShadowServerTower?
     @Published private(set) var updatedAt: Date?
+    /// The gateway reading the server last published; the recorder prefers it over polling the gateway.
+    @Published private(set) var routerReading: RouterReading?
     @Published var host: String { didSet { defaults.set(host, forKey: Keys.host) } }
     @Published var port: String { didSet { defaults.set(port, forKey: Keys.port) } }
     @Published var username: String
@@ -23,6 +25,7 @@ import Network
         static let host = "shadowServer.host", port = "shadowServer.port", enabled = "shadowServer.enabled"
     }
     private struct Saved: Codable { let username: String; let password: String }
+    struct RouterReading: Equatable { let snapshot: TMobileGatewaySnapshot; let date: Date }
 
     private let defaults: UserDefaults
     private let store: any ScopedCredentialStore
@@ -34,6 +37,9 @@ import Network
     private var watchdog: Timer?
     private var lastInbound = Date.distantPast
     private var retryID: UUID?
+    // Live (non-retained) router fields with their arrival time on this Mac.
+    private var routerValues: [String: (value: Any, at: Date)] = [:]
+    private var routerBuildID: UUID?
     private static let keepAlive: UInt16 = 60
 
     init(defaults: UserDefaults = .standard, store: any ScopedCredentialStore = KeychainScopedCredentialStore()) {
@@ -188,14 +194,38 @@ import Network
                 return
             }
             state = .connected
-            connection.send(content: ShadowServerMQTT.subscribe(ShadowServerMQTT.topics, packetID: 1), completion: .idempotent)
+            connection.send(content: ShadowServerMQTT.subscribe(ShadowServerMQTT.topics + ShadowServerRouter.topics, packetID: 1),
+                            completion: .idempotent)
         case .subAck(let granted):
             if granted.contains(0x80) { stop("Shadow server denied this login access to tower topics") }
-        case .publish(let topic, let payload):
+        case .publish(let topic, let payload, let retained):
             if topic == "van/router/towers/estimated", let list = ShadowServerTower.list(payload) { towers = list }
             if topic == "van/router/towers/serving" { serving = ShadowServerTower.one(payload) }
+            // Retained replays may describe a radio that has since disappeared; only live polls count.
+            if !retained, topic.hasPrefix(ShadowServerRouter.topicPrefix + "signal/") || topic.hasPrefix(ShadowServerRouter.topicPrefix + "cell/") {
+                routerValue(String(topic.dropFirst(ShadowServerRouter.topicPrefix.count)), payload)
+            }
             updatedAt = Date()
         case .pingResp, .other: break
+        }
+    }
+
+    /// The server publishes one topic per field each poll. Build a reading shortly
+    /// after the poll's `updated` stamp from fields that arrived live in that poll,
+    /// so a field the gateway stopped reporting is not carried forward. The reading
+    /// is dated by this Mac's clock, which the recorder's freshness checks use.
+    private func routerValue(_ key: String, _ payload: Data) {
+        let now = Date()
+        if let value = ShadowServerRouter.value(payload) { routerValues[key] = (value, now) } else { routerValues[key] = nil }
+        guard key == ShadowServerRouter.updatedKey else { return }
+        let build = UUID()
+        routerBuildID = build
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, self.routerBuildID == build, self.state == .connected else { return }
+            let poll = self.routerValues.filter { abs($0.value.at.timeIntervalSince(now)) <= 5 }.mapValues(\.value)
+            guard let reading = ShadowServerRouter.reading(poll) else { return }
+            self.routerReading = RouterReading(snapshot: reading.snapshot, date: now)
         }
     }
 
@@ -221,6 +251,9 @@ import Network
 
     private func teardown() {
         retryID = nil
+        routerBuildID = nil
+        routerValues = [:]
+        routerReading = nil
         watchdog?.invalidate(); watchdog = nil
         connection?.stateUpdateHandler = nil
         connection?.cancel(); connection = nil
