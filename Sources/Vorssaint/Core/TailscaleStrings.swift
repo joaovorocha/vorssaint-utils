@@ -49,7 +49,7 @@ private extension TailscaleStrings {
         starting: "Iniciando…", unavailable: "Status do Tailscale indisponível", exitNode: "Nó de saída",
         devices: "Dispositivos", direct: "Direto", relay: "Relay", offline: "Offline", measureLatency: "Medir latência")
     static let tr = Self(
-        enable: "Tailscale'i göster", connected: "Bağlı", stopped: "Durduruldu", needsLogin: "Giriş gerekli",
+        enable: "Tailscale’i göster", connected: "Bağlı", stopped: "Durduruldu", needsLogin: "Giriş gerekli",
         starting: "Başlatılıyor…", unavailable: "Tailscale durumu alınamıyor", exitNode: "Çıkış düğümü",
         devices: "Cihazlar", direct: "Doğrudan", relay: "Aktarma", offline: "Çevrimdışı", measureLatency: "Gecikmeyi ölç")
     static let ru = Self(
