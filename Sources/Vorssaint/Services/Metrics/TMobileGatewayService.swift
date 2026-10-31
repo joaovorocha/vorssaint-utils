@@ -11,6 +11,11 @@ final class TMobileGatewayService: ObservableObject {
 
     @Published private(set) var snapshot: TMobileGatewaySnapshot?
     @Published private(set) var phase: TMobileGatewayPhase = .idle
+    /// True while `snapshot` came from a relay (a home server) because the LAN gateway is out of reach.
+    @Published private(set) var isRelayed = false
+    private var relayedAt: Date?
+    // Matches the recorder's relay window (the server poller backs off to 120 s).
+    private static let relayWindow: TimeInterval = 130
 
     private let session: URLSession
     private var pollingTask: Task<Void, Never>?
@@ -65,6 +70,18 @@ final class TMobileGatewayService: ObservableObject {
         errorStreak = 0
         snapshot = nil
         phase = .idle
+        isRelayed = false
+        relayedAt = nil
+    }
+
+    /// A relayed reading fills in only while direct LAN polling is not succeeding.
+    func useRelayed(_ relayed: TMobileGatewaySnapshot, at date: Date) {
+        guard baseURL != nil, isRelayed || phase != .ready,
+              TMobileGatewaySupport.isValidSnapshot(relayed) else { return }
+        isRelayed = true
+        relayedAt = date
+        snapshot = relayed
+        phase = .ready
     }
 
     private func launchPolling() {
@@ -106,6 +123,7 @@ final class TMobileGatewayService: ObservableObject {
             }
             guard (200...299).contains(response.statusCode) else { throw TMobileGatewayFailure.unavailable }
             snapshot = try TMobileGatewaySupport.parse(data)
+            isRelayed = false
             errorStreak = 0
             phase = .ready
         } catch {
@@ -116,9 +134,14 @@ final class TMobileGatewayService: ObservableObject {
                     [.userAuthenticationRequired, .userCancelledAuthentication].contains(error.code) {
                 failure = .authenticationRequired
             } else { failure = .unavailable }
+            errorStreak = min(errorStreak + 1, 3)
+            if isRelayed, let relayedAt, Date().timeIntervalSince(relayedAt) <= Self.relayWindow {
+                phase = .ready
+                return TMobileGatewaySupport.pollingDelay(errorStreak: errorStreak)
+            }
+            isRelayed = false
             snapshot = nil
             phase = .failed(failure)
-            errorStreak = min(errorStreak + 1, 3)
         }
         return TMobileGatewaySupport.pollingDelay(errorStreak: errorStreak)
     }

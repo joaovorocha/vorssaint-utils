@@ -639,6 +639,7 @@ if (( TEST )); then
         zsh ./Tests/TMobileCellTelemetryServiceTests.sh || test_status=1
         zsh ./Tests/TMobileOpenCellIDServiceTests.sh || test_status=1
         zsh ./Tests/TMobileCoverageStoreTests.sh || test_status=1
+        zsh ./Tests/ShadowServerMQTTTests.sh || test_status=1
     fi
     discard_test_preferences || test_status=1
     exit $test_status
