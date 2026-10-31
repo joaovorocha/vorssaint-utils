@@ -257,7 +257,7 @@ struct TMobileCoverageExplorerView: View {
             readingFact("Signal quality", reading.sinr, unit: "dB")
             readingFact("Tested download", reading.downloadMbps, unit: "Mbps")
             if let coordinate = TMobileCoverageMapDrawing.coordinate(for: reading, metric: metric) {
-                Text(String(format: "%.6f, %.6f", coordinate.latitude, coordinate.longitude))
+                Text(String(format: "%.6f, %.6f", locale: Locale(identifier: "en_US_POSIX"), coordinate.latitude, coordinate.longitude))
                     .font(.caption.monospaced()).textSelection(.enabled)
                 Text(metric == .speed ? "Recorded speed-test location" : reading.correction == nil ? "Recorded location" : "Manually corrected location")
                     .font(.caption).foregroundStyle(.secondary)
@@ -326,7 +326,7 @@ struct TMobileCoverageExplorerView: View {
                             .foregroundStyle(.purple)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(verbatim: pin.name).font(.callout.weight(.medium)).foregroundStyle(.primary)
-                            Text(String(format: "%.5f, %.5f", pin.latitude, pin.longitude))
+                            Text(String(format: "%.5f, %.5f", locale: Locale(identifier: "en_US_POSIX"), pin.latitude, pin.longitude))
                                 .font(.caption.monospaced()).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
