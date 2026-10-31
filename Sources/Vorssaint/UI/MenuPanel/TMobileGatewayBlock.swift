@@ -12,7 +12,6 @@ struct TMobileGatewayBlock: View {
     @AppStorage(DefaultsKey.tMobileGatewayAddress) private var address = TMobileGatewayService.defaultBaseURL
     @State private var configuring = false
     @State private var lastUpdated: Date?
-    @State private var showingHistory = false
     @State private var showingTips = false
     @Environment(\.colorScheme) private var colorScheme
 
@@ -44,12 +43,12 @@ struct TMobileGatewayBlock: View {
                     } else {
                         status
                     }
-                    Button("More radio & tower details…") { TMobileCellTelemetryWindow.shared.show() }
+                    Button("Coverage, radio & towers…") { TMobileCellTelemetryWindow.shared.show() }
                         .buttonStyle(.bordered).controlSize(.small)
                     HStack {
                         Button("Signal guide & tips") { showingTips = true }
                         Spacer(minLength: 0)
-                        Button("History & towers") { showingHistory = true }
+                        Button("History & towers") { TMobileCellTelemetryWindow.shared.show() }
                     }.buttonStyle(.bordered).controlSize(.small)
                     Button("Wi-Fi & router settings…") { TMobileWiFiSettingsWindow.shared.show() }
                         .buttonStyle(.bordered).controlSize(.small)
@@ -63,7 +62,6 @@ struct TMobileGatewayBlock: View {
             lastUpdated = snapshot == nil ? nil : Date()
         }
         .onDisappear { TMobileGatewayMonitor.shared.setPanelVisible(false) }
-        .sheet(isPresented: $showingHistory) { TMobileGatewayHistoryView() }
         .sheet(isPresented: $showingTips) { TMobileGatewayTipsView(snapshot: service.snapshot) }
     }
 
@@ -208,7 +206,6 @@ struct TMobileGatewayAddressEditor: View {
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(DefaultsKey.tMobileGatewayAddress) private var address = TMobileGatewayService.defaultBaseURL
     @State private var draft = ""
-    @State private var history = false
     @State private var addressSaveBlocked = false
     @Environment(\.dismiss) private var dismiss
 
@@ -236,17 +233,15 @@ struct TMobileGatewayAddressEditor: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Divider()
-            Text("Show the connected radio, bars and bands together in Settings → Monitor → In the menu bar → T-Mobile connection. All available radio metrics are in the Radio & tower details window.")
+            Text("Show the connected radio, bars and bands together in Settings → Monitor → In the menu bar → T-Mobile connection. All available radio metrics are in the Coverage window.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Button("Local history & tower map…") { history = true }
-            Button("Radio & tower details…") { TMobileCellTelemetryWindow.shared.show() }
+            Button("Coverage, history & tower map…") { TMobileCellTelemetryWindow.shared.show() }
                 .buttonStyle(.bordered).controlSize(.small)
             Button("Wi-Fi & router settings…") { TMobileWiFiSettingsWindow.shared.show() }
         }
         .padding(16)
         .frame(width: 300)
         .onAppear { draft = address }
-        .sheet(isPresented: $history) { TMobileGatewayHistoryView() }
     }
 
     private func save() {

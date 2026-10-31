@@ -163,6 +163,12 @@ enum SettingsDirectory {
         if BrightnessService.keyboardLightIsSupported {
             items.append(SettingsSearchSupport.keyboardBrightnessShortcutItem(language: language))
         }
+        items.append(SettingsSearchItem(
+            id: .setting(.tMobileCoverage),
+            destination: FeatureSettingsDestination(.monitor, sectionAnchor: .tMobileCoverage),
+            title: "T-Mobile Coverage", icon: "antenna.radiowaves.left.and.right",
+            keywords: ["Recording", "Automatically start recording", "Record on launch", "Background recording", "Launch at login",
+                       "Saved sessions", "Heat map", "Signal history", "Tower map", "5G", "LTE"]))
         return items
     }
 

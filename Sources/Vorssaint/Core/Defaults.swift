@@ -382,6 +382,7 @@ enum DefaultsKey {
     static let menuBarTMobileLTE = "menuBarTMobileLTE"
     static let menuBarTMobile5G = "menuBarTMobile5G"
     static let tMobileUnifiedMenuBarMigrated = "tMobileUnifiedMenuBarMigrated"
+    static let tMobileMenuBarComponents = "tMobileMenuBarComponents" // technology 1 | bars 2 | bands 4
     static let menuBarTMobileLTEBands = "menuBarTMobileLTEBands"
     static let menuBarTMobile5GBands = "menuBarTMobile5GBands"
     static let menuBarTMobileLTERSRP = "menuBarTMobileLTERSRP"
@@ -469,6 +470,7 @@ enum DefaultsKey {
     static let monitorNetTest = "monitorNetTest"
     static let monitorNetTMobile = "monitorNetTMobile"
     static let tMobileGatewayAddress = "tMobileGatewayAddress"
+    static let tMobileCoverageStartOnLaunch = "tMobileCoverageStartOnLaunch"
     static let networkSpeedUnit = "networkSpeedUnit" // bytes | bits, for every live network speed readout
     static let monitorDiskUsage = "monitorDiskUsage"
     static let monitorDiskActivity = "monitorDiskActivity"
@@ -1620,6 +1622,7 @@ enum Defaults {
         DefaultsKey.menuBarBatteryTime: false,
         DefaultsKey.menuBarTMobileLTE: false,
         DefaultsKey.menuBarTMobile5G: false,
+        DefaultsKey.tMobileMenuBarComponents: 7,
         DefaultsKey.menuBarTMobileLTEBands: false,
         DefaultsKey.menuBarTMobile5GBands: false,
         DefaultsKey.menuBarTMobileLTERSRP: false,
@@ -1699,6 +1702,7 @@ enum Defaults {
         DefaultsKey.monitorNetTest: true,
         DefaultsKey.monitorNetTMobile: false,
         DefaultsKey.tMobileGatewayAddress: "http://192.168.12.1",
+        DefaultsKey.tMobileCoverageStartOnLaunch: false,
         DefaultsKey.networkSpeedUnit: NetworkSpeedUnit.bytes.rawValue,
         DefaultsKey.monitorDiskUsage: true,
         DefaultsKey.monitorDiskActivity: true,

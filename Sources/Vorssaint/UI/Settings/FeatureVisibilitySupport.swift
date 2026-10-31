@@ -54,6 +54,7 @@ enum SettingsSectionAnchor: String, CaseIterable, Hashable {
     case cleaningMode
     case soundOutputSwitcher
     case keyboardBrightnessShortcuts
+    case tMobileCoverage
     case fanControl
     case windowMaximizer
 
@@ -75,7 +76,7 @@ enum SettingsSectionAnchor: String, CaseIterable, Hashable {
         case .screenshot, .screenRecorder, .colorPicker, .screenOCR:
             return .screenshot
         case .keyboardBrightnessShortcuts: return .shortcuts
-        case .fanControl: return .monitor
+        case .fanControl, .tMobileCoverage: return .monitor
         case .windowMaximizer: return .windowLayout
         }
     }

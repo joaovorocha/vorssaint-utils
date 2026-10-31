@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Shadow Utilities
+- Removes the placeholder Shadow server warning from Coverage and keeps the local-storage status visible.
+- Enlarges the FCC model legend with a high-contrast blue scale, explicit weaker/stronger dBm labels and a separate signal-unavailable swatch; preserves the map's signal scale and transparency.
+- Loads FCC coverage with one action: checks saved Keychain access first, asks for a token only when needed, reuses verified downloads and returns to Map after loading the selected area. Removes Save-panel filename conflicts and keeps progress/cancellation available across tabs.
+- Opens coverage in a map-first view with FCC model shading, measured heat cells and selectable tower references enabled together.
+- Shows reference coordinates, source-declared technology and bands, band explanations and distance from the selected measurement; keeps unknown site capacity explicit.
+- Retains FCC predicted RSRP for blue model shading, preserving legacy footprint-only layers. Moves charts and data setup to separate tabs and restores the visible map area after switching tabs.
+- Adds T-Mobile FCC coverage checks for U.S. states and territories, secure local token storage, and raw GeoPackage downloads with bounded map-area import.
+- Labels FCC availability dates, modeled categories and file provenance separately from recorded measurements; keeps legacy GeoJSON references readable.
+
 ## [3.4.1] - 2026-10-08
 
 ### Summary

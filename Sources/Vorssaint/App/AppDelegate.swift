@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     private var updateHighlightsIsReview = false
     private var updateShowcaseWindow: NSWindow?
     private var updatePreviewWindow: NSWindow?
+    private var coverageRecordingStartup = TMobileCoverageRecordingStartup()
 
     // MARK: - Lifecycle
 
@@ -156,6 +157,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         // One binding per feature: only available features are touched, so a
         // feature switched off in the hub never even instantiates here.
         FeatureRuntime.shared.syncAtLaunch()
+        // A saved opt-in starts a new local session even when Coverage has
+        // never been opened. Consume this once; later preference changes or
+        // closing/reopening a window must not undo an explicit Stop.
+        if coverageRecordingStartup.shouldStartAfterAppLaunch(
+            enabled: UserDefaults.standard.bool(forKey: DefaultsKey.tMobileCoverageStartOnLaunch),
+            networkAvailable: AppFeature.monitorNetwork.isAvailable) {
+            TMobileCoverageRecorder.shared.start()
+        }
         if AppFeature.monitorPower.isAvailable, PowerSampler.hasInternalBattery {
             MaxCapacityProbe.shared.refreshIfStale()
         }
@@ -282,6 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
     func applicationWillTerminate(_ notification: Notification) {
         isTerminating = true
+        TMobileCoverageRecorder.shared.stop(reason: .appClosed)
         CommandBarService.shared.restoreBorrowedInputSource()
         if AppFeature.notch.isAvailable { NotchService.shared.stop(restoreCapture: false) }
         // Quitting properly means the start worked, whenever it happened.

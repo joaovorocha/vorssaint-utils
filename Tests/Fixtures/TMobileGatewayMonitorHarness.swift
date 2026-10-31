@@ -78,10 +78,48 @@ extension Notification.Name {
         check(service.phase == .ready, "history recording retains the shared reader")
         monitor.setHistoryEnabled(false)
         check(service.phase == .idle && service.snapshot == nil, "last consumer stopping clears live readings")
+        // Explicit Coverage demand is independent of the dropdown's display
+        // preference, but still obeys the global network-feature boundary.
+        defaults.set(false, forKey: "panel")
+        monitor.setCoverageRecording(true)
+        wait { service.phase == .ready }
+        check(MonitorProtocol.count == 3 && recordings == 3,
+              "coverage recording alone starts one public reader with panel, window, menu and history off")
+        monitor.setCoverageRecording(true)
+        monitor.syncPreferences()
+        settle()
+        check(MonitorProtocol.count == 3 && service.phase == .ready,
+              "repeated coverage demand does not start duplicate requests")
+        defaults.set(true, forKey: "panel")
+        monitor.setRadioWindowVisible(true)
+        monitor.setPanelVisible(true)
+        monitor.setHistoryEnabled(true)
+        settle()
+        check(MonitorProtocol.count == 3,
+              "window, panel and history join coverage through the same reader")
+        monitor.setRadioWindowVisible(false)
+        monitor.setPanelVisible(false)
+        monitor.setHistoryEnabled(false)
+        check(service.phase == .ready && MonitorProtocol.count == 3,
+              "coverage retains the shared reader after every other consumer closes")
+        monitor.setCoverageRecording(false)
+        check(service.phase == .idle && service.snapshot == nil,
+              "stopping the last coverage consumer clears live readings")
+        defaults.set(false, forKey: "networkAvailable")
+        monitor.setCoverageRecording(true)
+        settle()
+        check(service.phase == .idle && MonitorProtocol.count == 3,
+              "coverage demand cannot bypass a disabled network feature")
+        monitor.setCoverageRecording(false)
+        defaults.set(true, forKey: "networkAvailable")
+        monitor.syncPreferences()
+        settle()
+        check(service.phase == .idle && MonitorProtocol.count == 3,
+              "restoring the network feature with coverage off creates no request")
         defaults.set(true, forKey: "menu")
         monitor.syncPreferences()
         wait { service.phase == .ready }
-        check(MonitorProtocol.count == 3, "re-enabling a pin resumes the same reader")
+        check(MonitorProtocol.count == 4, "re-enabling a pin resumes the same reader")
         monitor.setRadioWindowVisible(true)
         defaults.set(false, forKey: "networkAvailable")
         monitor.syncPreferences()
@@ -91,11 +129,11 @@ extension Notification.Name {
         defaults.set("http://8.8.8.8", forKey: "address")
         monitor.syncPreferences()
         settle()
-        check(service.phase == .failed(.invalidAddress) && MonitorProtocol.count == 3,
+        check(service.phase == .failed(.invalidAddress) && MonitorProtocol.count == 4,
               "invalid origins do not open another request")
         defaults.set(false, forKey: "menu")
         monitor.syncPreferences()
-        print("PASS: 13 T-Mobile shared-reader lifecycle checks; every request intercepted locally")
+        print("PASS: 20 T-Mobile shared-reader lifecycle checks; every request intercepted locally")
     }
 
     private static func check(_ condition: @autoclosure () -> Bool, _ message: String) {

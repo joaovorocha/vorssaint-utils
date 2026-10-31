@@ -131,7 +131,7 @@ struct TMobileGatewayHistoryView: View {
     }
 }
 
-private struct TMobileCoordinateEditor: View {
+struct TMobileCoordinateEditor: View {
     let measurement: Bool
     @ObservedObject private var store = TMobileGatewayHistoryStore.shared
     @Environment(\.dismiss) private var dismiss

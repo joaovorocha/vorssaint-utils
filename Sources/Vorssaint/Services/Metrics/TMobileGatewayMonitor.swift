@@ -20,6 +20,7 @@ final class TMobileGatewayMonitor {
     private let recordSnapshot: (TMobileGatewaySnapshot, Date) -> Void
     private var panelVisible = false
     private var radioWindowVisible = false
+    private var coverageRecording = false
     private var historyOverride: Bool?
     private var isPolling = false
     private var cancellables = Set<AnyCancellable>()
@@ -69,12 +70,17 @@ final class TMobileGatewayMonitor {
         syncPreferences()
     }
 
+    func setCoverageRecording(_ enabled: Bool) {
+        coverageRecording = enabled
+        syncPreferences()
+    }
+
     func syncPreferences() {
         let menuBarEnabled = MenuBarMetric.enabled(in: defaults).contains { $0.tMobileReading != nil }
         let shouldPoll = TMobileGatewayMenuBarSupport.needsPolling(
             networkAvailable: defaults.bool(forKey: AppFeature.monitorNetwork.availabilityKey),
             panelVisible: panelVisible || radioWindowVisible, panelEnabled: defaults.bool(forKey: DefaultsKey.monitorNetTMobile),
-            menuBarEnabled: menuBarEnabled, historyEnabled: historyOverride ?? historyIsRecording())
+            menuBarEnabled: menuBarEnabled, historyEnabled: coverageRecording || (historyOverride ?? historyIsRecording()))
         if shouldPoll {
             // start() is idempotent for the current validated address and
             // retires the previous request before starting a changed origin.

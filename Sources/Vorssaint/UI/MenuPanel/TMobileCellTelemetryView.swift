@@ -13,10 +13,10 @@ final class TMobileCellTelemetryWindow: NSObject, NSWindowDelegate {
     func show() {
         if let window { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
         let service = TMobileCellTelemetryService()
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 820),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 860),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "T-Mobile radio & towers"
-        window.contentMinSize = NSSize(width: 820, height: 780)
+        window.title = "T-Mobile Coverage"
+        window.contentMinSize = NSSize(width: 860, height: 700)
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = NSHostingView(rootView: TMobileCellTelemetryView(service: service) { [weak self] in
@@ -45,8 +45,7 @@ struct TMobileCellTelemetryView: View {
     let close: () -> Void
     @AppStorage(DefaultsKey.tMobileGatewayAddress) private var address = TMobileGatewayService.defaultBaseURL
     @Environment(\.colorScheme) private var colorScheme
-    @State private var username = "admin"
-    @State private var password = ""
+    @StateObject private var credentials = TMobileGatewayCredentialForm()
     @State private var trustedNetwork = false
     @State private var requestTask: Task<Void, Never>?
     @State private var showingAdminSignIn = false
@@ -55,24 +54,9 @@ struct TMobileCellTelemetryView: View {
     private var busy: Bool { service.phase == .connecting || service.phase == .loading }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("T-Mobile radio & towers").font(.title2.bold())
-                Spacer()
-                Button("Done") { finish() }.keyboardShortcut(.cancelAction)
-            }
-            Label(address, systemImage: "network").font(.callout).foregroundStyle(.secondary)
-            TabView {
-                radioTab.tabItem { Label("Radio", systemImage: "antenna.radiowaves.left.and.right") }
-                TMobileGatewayHistoryView(onDone: { finish() }, showsHeader: false)
-                    .tabItem { Label("History & towers", systemImage: "map") }
-                ScrollView { TMobileOpenCellIDView().padding(16) }
-                    .tabItem { Label("OpenCelliD", systemImage: "mappin.and.ellipse") }
-                towerWebsites.tabItem { Label("Websites", systemImage: "globe") }
-            }
-        }
-        .padding(22).frame(minWidth: 820, idealWidth: 860, minHeight: 780, idealHeight: 820)
-        .onChange(of: address) { _, _ in signOut(); trustedNetwork = false }
+        TMobileCoverageWorkspaceView(close: finish) { radioTab }
+        .onAppear { credentials.updateAddress(address) }
+        .onChange(of: address) { _, value in signOut(); trustedNetwork = false; credentials.updateAddress(value) }
         .onDisappear { signOut() }
     }
 
@@ -133,21 +117,14 @@ struct TMobileCellTelemetryView: View {
                 if let date = service.fetchedAt { Text("Read \(date.formatted(date: .omitted, time: .standard))") }
                 Spacer()
                 if service.canRefresh { Button("Refresh readings") { run { await service.refresh() } } }
+                if service.canRefresh {
+                    Button("Forget saved password") { credentials.forget() }.disabled(!credentials.scopeIsValid)
+                }
                 if service.phase != .signedOut { Button(busy ? "Cancel & sign out" : "Sign out") { signOut() } }
             }.font(.callout)
             if let message = service.message { Text(message).font(.callout).fixedSize(horizontal: false, vertical: true) }
+            if let message = credentials.message { Text(message).font(.callout).fixedSize(horizontal: false, vertical: true) }
         }
-    }
-
-    private var towerWebsites: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Tower research websites").font(.title3.bold())
-            Link("Open AntennaSearch…", destination: URL(string: "https://www.antennasearch.com/")!)
-            Link("Open FCC map…", destination: URL(string: "https://fcc.maps.arcgis.com/apps/webappviewer/index.html?id=6c1b2e73d9d749cdb7bc88a0d1bdd25b")!)
-            Text("These websites open in your browser. Enter your search area there. Listings are research references and do not prove which tower your gateway uses.")
-                .font(.callout).foregroundStyle(.secondary)
-            Spacer()
-        }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var signIn: some View {
@@ -155,24 +132,24 @@ struct TMobileCellTelemetryView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Use the gateway admin password, separate from the Wi-Fi password and T-Mobile account. This session reads radio details and ends when this window closes.")
                     .font(.callout).foregroundStyle(.secondary)
-                TextField("Username", text: $username).textFieldStyle(.roundedBorder)
-                SecureField("Gateway admin password", text: $password).textFieldStyle(.roundedBorder)
-                Text("Credentials and these advanced readings are not saved. Refresh is manual.")
+                TMobileGatewayCredentialFields(form: credentials)
+                Text("Advanced readings are not saved. Refresh is manual.")
                     .font(.caption).foregroundStyle(.secondary)
                 if usesHTTP {
                     Text("This gateway uses HTTP. Your administrator credentials travel without encryption on the local network.").font(.callout)
                     Toggle("I’m connected to a trusted private network", isOn: $trustedNetwork)
                 }
                 Button("Sign in & read radio details") {
-                    let enteredPassword = password
-                    let enteredUsername = username
-                    let enteredAddress = address
-                    password = ""
-                    run { await service.connect(baseURL: enteredAddress, username: enteredUsername, password: enteredPassword) }
+                    credentials.updateAddress(address)
+                    guard let input = credentials.prepareSignIn() else { return }
+                    run {
+                        await service.connect(baseURL: input.address, username: input.username, password: input.password)
+                        credentials.completeSignIn(input, succeeded: service.phase == .ready)
+                    }
                 }.buttonStyle(.borderedProminent)
-                    .disabled(password.isEmpty || username.isEmpty || (usesHTTP && !trustedNetwork)
+                    .disabled(credentials.password.isEmpty || credentials.username.isEmpty || (usesHTTP && !trustedNetwork)
                               || TMobileGatewaySupport.privateLANBaseURL(address) == nil)
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(6).disabled(busy)
         }
     }
 
@@ -180,15 +157,21 @@ struct TMobileCellTelemetryView: View {
         GroupBox(isFiveG ? "5G radio details" : "LTE / 4G radio details") {
             VStack(alignment: .leading, spacing: 9) {
                 ForEach(TMobileGatewayRadioPresentation.rows(report.signal, isFiveG: isFiveG)) { row in
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(row.label).foregroundStyle(.secondary)
-                        Spacer(minLength: 16)
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(row.value).monospacedDigit()
-                            if let quality = row.qualityLabel { Text(quality).font(.caption) }
-                        }.foregroundStyle(row.quality.presentationColor(for: colorScheme))
+                    if row.id == .bands || row.id == .supportedBands {
+                        TMobileBandDetailRow(row: row,
+                                            bands: row.id == .bands ? report.signal.bands : report.signal.supportedBands ?? [],
+                                            isFiveG: isFiveG)
+                    } else {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(row.label).foregroundStyle(.secondary)
+                            Spacer(minLength: 16)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(row.value).monospacedDigit()
+                                if let quality = row.qualityLabel { Text(quality).font(.caption) }
+                            }.foregroundStyle(row.quality.presentationColor(for: colorScheme))
+                        }
+                        .accessibilityElement(children: .ignore).accessibilityLabel(row.accessibilityValue)
                     }
-                    .accessibilityElement(children: .ignore).accessibilityLabel(row.accessibilityValue)
                 }
                 TMobileTowerReferenceView(radio: report.signal, isFiveG: isFiveG,
                                          eNodeBID: report.signal.eNodeBID, ecgi: report.ecgi)
@@ -200,6 +183,6 @@ struct TMobileCellTelemetryView: View {
         requestTask?.cancel()
         requestTask = Task { await operation() }
     }
-    private func signOut() { requestTask?.cancel(); requestTask = nil; password = ""; service.disconnect() }
+    private func signOut() { requestTask?.cancel(); requestTask = nil; credentials.clearVolatile(); service.disconnect() }
     private func finish() { signOut(); close() }
 }

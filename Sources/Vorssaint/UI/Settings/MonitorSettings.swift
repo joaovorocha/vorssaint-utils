@@ -24,6 +24,9 @@ struct MonitorSettings: View {
     @AppStorage(DefaultsKey.networkSpeedUnit) private var networkSpeedUnit = NetworkSpeedUnit.bytes
     @AppStorage(DefaultsKey.monitorMemoryMetric) private var memoryMetric = "used"
     @AppStorage(DefaultsKey.panelShowFanControl) private var showFanControl = true
+    @AppStorage(DefaultsKey.monitorNetTMobile) private var showTMobileGateway = false
+    @AppStorage(DefaultsKey.tMobileCoverageStartOnLaunch) private var startCoverageOnLaunch = false
+    @State private var configuringTMobile = false
 
     var body: some View {
         ScrollView {
@@ -35,6 +38,8 @@ struct MonitorSettings: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                coverageCard
+                    .settingsSectionAnchor(.tMobileCoverage, cornerRadius: 16)
                 groupHeading(l10n.s.monitorMenuBarSection, symbol: "menubar.rectangle")
                 // Everything under this header changes what the header
                 // shows, so it stays in view until the section ends.
@@ -90,6 +95,29 @@ struct MonitorSettings: View {
 
     private var appearance: MenuBarMetricAppearance {
         MenuBarMetricAppearance(rawValue: Defaults.sanitizedMenuBarMetricAppearance(metricAppearance)) ?? .values
+    }
+
+    private var coverageCard: some View {
+        let strings = TMobileGatewayStrings.localized(l10n.language)
+        return SettingsCard(title: "T-Mobile Coverage") {
+            SettingsFeatureSwitchRow(symbol: "antenna.radiowaves.left.and.right", title: strings.enable,
+                                     caption: "Show live gateway readings in the Network panel.",
+                                     isOn: $showTMobileGateway, feature: .monitorNetwork)
+            SettingsFeatureSwitchRow(symbol: "record.circle", title: "Automatically start recording when app launches",
+                                     caption: "Starts a new local session in the background. Stop recording pauses it until the next launch.",
+                                     isOn: $startCoverageOnLaunch, feature: .monitorNetwork)
+            Text("View saved sessions, radio measurements and tower references. Start or stop recording in Coverage. Recording continues when its window is closed and pauses when the Mac or display sleeps. To start at login, also enable Launch at login in General.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Open Coverage…") { TMobileCellTelemetryWindow.shared.show() }
+                Button(strings.configure) { configuringTMobile = true }
+                    .popover(isPresented: $configuringTMobile) {
+                        TMobileGatewayAddressEditor()
+                    }
+            }
+        }
     }
 
     /// The readings that can sit in the menu bar, as tiles in the order they
@@ -383,13 +411,11 @@ private struct MenuBarMetricTile: View {
     @AppStorage(DefaultsKey.menuBarMemoryStyle) private var memoryStyle = "percent"
     @AppStorage(DefaultsKey.menuBarNetworkUploadFirst) private var uploadFirst = false
     @AppStorage(DiskMenuBarStyle.defaultsKey) private var diskStyle = DiskMenuBarStyle.percent
-    @AppStorage private var gatewaySignalStyle: String
+    @AppStorage(DefaultsKey.tMobileMenuBarComponents) private var gatewayComponents = 7
 
     init(metric: MenuBarMetric) {
         self.metric = metric
         _shown = AppStorage(wrappedValue: false, metric.defaultsKey)
-        _gatewaySignalStyle = AppStorage(wrappedValue: "bars",
-            metric.tMobileReading?.signalStyleDefaultsKey ?? DefaultsKey.tMobileLTEMenuBarSignalStyle)
     }
 
     var body: some View {
@@ -400,7 +426,7 @@ private struct MenuBarMetricTile: View {
     /// What the reading's option makes the menu bar show, in its own terms.
     private var optionsSummary: String {
         if metric.tMobileReading != nil {
-            return "Connected band & signal"
+            return TMobileGatewayMenuBarComponents.sanitized(gatewayComponents).summary
         }
         switch metric {
         case .memory:
@@ -419,8 +445,20 @@ private struct MenuBarMetricTile: View {
 
     private var options: AnyView? {
         if metric.tMobileReading != nil {
-            return AnyView(Text("Shows the currently reported LTE or 5G connection, signal bars and its bands together. Open the dropdown for all radio metrics.")
-                .font(.callout).fixedSize(horizontal: false, vertical: true).frame(width: 260))
+            return AnyView(VStack(alignment: .leading, spacing: 10) {
+                gatewayComponentToggle("Technology", component: .technology)
+                gatewayComponentToggle("Signal bars", component: .bars)
+                gatewayComponentToggle("Bands", component: .bands)
+                Text("Technology shows LTE, 5G or 5G UC for the current connection. UC is inferred from reported bands.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Keep at least one selected. Use the T-Mobile checkmark to hide the item.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading))
         }
         switch metric {
         case .memory:
@@ -444,6 +482,18 @@ private struct MenuBarMetricTile: View {
         default:
             return nil
         }
+    }
+
+    private func gatewayComponentToggle(_ title: String,
+                                        component: TMobileGatewayMenuBarComponents) -> some View {
+        let selected = TMobileGatewayMenuBarComponents.sanitized(gatewayComponents)
+        return Toggle(title, isOn: Binding(
+            get: { TMobileGatewayMenuBarComponents.sanitized(gatewayComponents).contains(component) },
+            set: { gatewayComponents = TMobileGatewayMenuBarComponents.sanitized(gatewayComponents)
+                .setting(component, enabled: $0).rawValue }))
+            .toggleStyle(.checkbox)
+            .disabled(selected == component)
+            .help(selected == component ? "Keep at least one selected, or hide the T-Mobile item with its checkmark." : title)
     }
 }
 

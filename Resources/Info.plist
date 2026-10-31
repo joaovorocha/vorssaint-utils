@@ -61,6 +61,10 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Vorssaint reads status from your T-Mobile gateway when enabled and changes Wi-Fi settings only after your confirmation. Gateway data stays on this Mac.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Vorssaint uses this Mac’s location while you record coverage, to place radio measurements on your map and detect new stops for speed tests. Measurements stay on this Mac until you export them.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Vorssaint uses this Mac’s location while you record coverage, to place radio measurements on your map and detect new stops for speed tests. Measurements stay on this Mac until you export them.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Vorssaint uses Automation to move files, send items to the Trash, open requested commands and control playback in your media apps.</string>
 	<key>NSAudioCaptureUsageDescription</key>

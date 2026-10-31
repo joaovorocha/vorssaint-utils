@@ -30,6 +30,7 @@ struct MenuBarMetricsPreview: View {
     @AppStorage(DefaultsKey.menuBarTMobile5GRSSI) private var gateway5GRSSI = false
     @AppStorage(DefaultsKey.tMobileLTEMenuBarSignalStyle) private var gatewayLTESignalStyle = "bars"
     @AppStorage(DefaultsKey.tMobile5GMenuBarSignalStyle) private var gateway5GSignalStyle = "bars"
+    @AppStorage(DefaultsKey.tMobileMenuBarComponents) private var gatewayComponents = 7
     @AppStorage(DefaultsKey.menuBarDiskUsage) private var diskUsage = false
     @AppStorage(DiskMenuBarStyle.defaultsKey) private var diskStyle = DiskMenuBarStyle.percent
     @AppStorage(DefaultsKey.menuBarDiskActivity) private var diskActivity = false
@@ -60,6 +61,7 @@ struct MenuBarMetricsPreview: View {
     var body: some View {
         let _ = gatewayLTESignalStyle
         let _ = gateway5GSignalStyle
+        let _ = gatewayComponents
         let _ = metricOrder
         let _ = combineTemperatures
         let _ = metricAppearance

@@ -82,6 +82,39 @@ enum SpeedTestTests {
                    "speed test \(testCase.name) stops requesting data at the failed phase")
             test.cancel()
         }
+        boundedCoverageTest(suite)
+    }
+
+    private static func boundedCoverageTest(_ suite: TestSuite) {
+        let clock = SpeedTestClock()
+        let scheduler = SpeedTestTimeBoxScheduler(clock: clock)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [SpeedTestProtocol.self]
+        configuration.httpAdditionalHeaders = ["X-Test-Scenario": "coverage-bounded"]
+        SpeedTestProtocol.boundedDownloadHook = { clock.advance(by: 1) }
+        defer { SpeedTestProtocol.boundedDownloadHook = nil }
+        let test = SpeedTest(configuration: configuration, sampleSeconds: 3,
+                             maximumDownloadBytes: 1_024, maximumUploadBytes: 512,
+                             clock: clock.now, scheduleTimeBox: scheduler.schedule)
+        test.start()
+        let deadline = Date().addingTimeInterval(3)
+        var terminal = false
+        repeat {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01))
+            switch test.phase { case .failed, .done: terminal = true; default: break }
+        } while !terminal && Date() < deadline
+        suite.expect(terminal && (test.downloadMbps ?? 0) > 0,
+                     "bounded coverage download finishes at its byte budget without waiting for its time box")
+        suite.expect(SpeedTestProtocol.requests(for: "coverage-bounded") == Array(repeating: "latency", count: 5) + ["download", "upload"],
+                     "bounded coverage test never starts another download chunk after reaching its byte budget")
+        suite.expect(SpeedTestProtocol.boundedDownloadQuery == "bytes=1024",
+                     "coverage download requests only the configured byte budget")
+        // URLProtocol does not emit upload byte progress; that zero-byte phase
+        // must fail rather than fabricate a complete successful test.
+        if case .failed = test.phase {
+            suite.expect(test.uploadMbps == nil, "bounded empty transfers never become a zero-valued completed upload")
+        } else { suite.expect(false, "zero-byte mocked upload must fail the bounded transfer") }
+        test.cancel()
     }
 
     private static func drainMainQueue() {
@@ -173,6 +206,8 @@ private final class SpeedTestTimeBoxScheduler {
 }
 
 private final class SpeedTestProtocol: URLProtocol {
+    static var boundedDownloadHook: (() -> Void)?
+    static var boundedDownloadQuery: String?
     private static let lock = NSLock()
     private static var recordedRequests: [String: [String]] = [:]
     private static var downloadsWithData: Set<String> = []
@@ -213,6 +248,10 @@ private final class SpeedTestProtocol: URLProtocol {
         let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         if rejects || phase == "download" {
+            if scenario == "coverage-bounded", phase == "download" {
+                Self.boundedDownloadQuery = url.query
+                Self.boundedDownloadHook?()
+            }
             client?.urlProtocol(self, didLoad: Data(repeating: 42, count: 1_024))
             if phase == "download" {
                 _ = Self.lock.withLock { Self.downloadsWithData.insert(scenario) }
