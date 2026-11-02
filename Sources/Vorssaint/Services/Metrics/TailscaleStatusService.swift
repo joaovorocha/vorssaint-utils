@@ -22,13 +22,18 @@ final class TailscaleStatusService: ObservableObject {
 
     static var isInstalled: Bool { cliPath != nil }
 
+    // The App Store Tailscale binary acts as a CLI only when TERM is set; launched
+    // from Finder or at login the app has none, so the binary tries its GUI and fails.
+    nonisolated private static let environment = ProcessInfo.processInfo.environment.merging(["TERM": "dumb"]) { current, _ in current }
+
     // A Task.sleep loop, not a Timer: App Nap throttles timers in menu-bar apps.
     func start() {
         guard loop == nil, let cli = Self.cliPath else { return }
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 let result = await Task.detached {
-                    BoundedProcessRunner.run(cli, ["status", "--json"], timeout: 5, maxOutputBytes: 2_000_000)
+                    BoundedProcessRunner.run(cli, ["status", "--json"], timeout: 5, maxOutputBytes: 2_000_000,
+                                             environment: Self.environment)
                 }.value
                 guard let self, !Task.isCancelled else { return }
                 let parsed = result.status == 0 ? TailscaleStatus.parse(result.output) : nil
@@ -54,7 +59,8 @@ final class TailscaleStatusService: ObservableObject {
                 for (id, address) in targets {
                     group.addTask {
                         let result = BoundedProcessRunner.run(cli, ["ping", "-c", "1", "--timeout", "3s", address],
-                                                              timeout: 5, maxOutputBytes: 4096)
+                                                              timeout: 5, maxOutputBytes: 4096,
+                                                              environment: Self.environment)
                         return (id, TailscaleStatus.pingMilliseconds(String(decoding: result.output, as: UTF8.self)))
                     }
                 }

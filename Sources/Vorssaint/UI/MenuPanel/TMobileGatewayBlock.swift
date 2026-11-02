@@ -35,7 +35,11 @@ struct TMobileGatewayBlock: View {
                         .buttonStyle(.plain)
                         .help(strings.configure)
                         .accessibilityLabel(strings.configure)
+                        #if SHADOW_UTILITIES
+                        .popover(isPresented: $configuring) { RouterSetupSheet() }
+                        #else
                         .popover(isPresented: $configuring) { TMobileGatewayAddressEditor() }
+                        #endif
                         if editing { PanelInlineHideButton(isVisible: $isVisible) }
                     }
                     if let snapshot = service.snapshot {

@@ -114,6 +114,9 @@ struct RouterSetupSheet: View {
             }
             if connection == RouterSetup.Connection.automatic.rawValue {
                 Divider()
+                Text("Tailscale").font(.headline)
+                RouterTailscaleStatus()
+                Divider()
                 Text("Shadow server").font(.headline)
                 ShadowServerControls()
             }
@@ -128,6 +131,55 @@ struct RouterSetupSheet: View {
             connection = (serverEnabled ? RouterSetup.Connection.automatic : .direct).rawValue
             shadow.resume()
         }
+    }
+}
+
+/// The tailnet the Shadow server is reached over: this Mac's state and the server peer.
+struct RouterTailscaleStatus: View {
+    @StateObject private var tailscale = TailscaleStatusService()
+    @ObservedObject private var shadow = ShadowServerConnection.shared
+    @AppStorage(DefaultsKey.monitorNetTailscale) private var showInPanel = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !TailscaleStatusService.isInstalled {
+                Text("Tailscale is not installed. This Mac reaches the Shadow server over your tailnet, so install Tailscale and sign in first.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else if let status = tailscale.status {
+                Label(thisMac(status), systemImage: status.state == .running ? "checkmark.circle" : "exclamationmark.circle")
+                Label(server(status), systemImage: "server.rack")
+            } else if tailscale.failed {
+                Label("Tailscale status unavailable. Open Tailscale and check that it is running.", systemImage: "exclamationmark.circle")
+            } else {
+                Text("Reading Tailscale…").foregroundStyle(.secondary)
+            }
+            HStack {
+                Toggle("Show Tailscale in the panel", isOn: $showInPanel)
+                Spacer()
+                if TailscaleStatusService.isInstalled {
+                    Button("Open Tailscale") {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Tailscale.app"))
+                    }
+                }
+            }
+        }
+        .font(.callout)
+        .onAppear { tailscale.start() }
+        .onDisappear { tailscale.stop() }
+    }
+
+    private func thisMac(_ status: TailscaleStatus) -> String {
+        guard status.state == .running else { return "This Mac is not connected to the tailnet" }
+        return "This Mac: " + [status.name, status.address].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private func server(_ status: TailscaleStatus) -> String {
+        let host = shadow.host.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !host.isEmpty else { return "Shadow server: enter its tailnet address below" }
+        guard let peer = status.peers.first(where: { $0.address == host || $0.name.lowercased().hasPrefix(host) }) else {
+            return "Shadow server \(host) is not in this tailnet"
+        }
+        return "Shadow server \(peer.name): " + (peer.online ? (peer.relay.map { "online, relayed via \($0)" } ?? "online, direct") : "offline")
     }
 }
 
