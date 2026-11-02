@@ -95,27 +95,7 @@ struct TMobileCoverageWorkspaceView<RadioDetails: View>: View {
                                cellID: tower.cell, radio: tower.radio.lowercased() == "5g" ? .nr : .lte, provenance: source)
     }
 
-    private var shadowControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("The Shadow server talks to the T-Mobile gateway and publishes tower estimates. This Mac only reads them over your tailnet.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            TextField("Server tailnet address (100.x.y.z or name.ts.net)", text: $shadow.host)
-            TextField("Port", text: $shadow.port).frame(width: 120)
-            TextField("MQTT username", text: $shadow.username)
-            SecureField(shadow.hasSavedPassword ? "Password saved in Keychain" : "MQTT password", text: $shadow.password)
-            HStack {
-                if shadow.isActive {
-                    Button("Disconnect") { shadow.disconnect() }
-                } else {
-                    Button("Connect") { shadow.connect() }.disabled(!shadow.canConnect)
-                }
-                if shadow.hasSavedPassword { Button("Forget password") { shadow.forgetPassword() } }
-                Spacer()
-                Text("\(shadow.towers.count) server towers").foregroundStyle(.secondary)
-            }
-            Label(shadow.statusText, systemImage: shadow.state == .connected ? "network" : "network.slash").font(.caption)
-        }.textFieldStyle(.roundedBorder)
-    }
+    private var shadowControls: some View { ShadowServerControls() }
     #endif
 
     var body: some View {

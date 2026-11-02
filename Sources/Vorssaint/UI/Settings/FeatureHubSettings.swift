@@ -82,6 +82,9 @@ struct FeatureHubSettings: View {
                     neverUsedCard
                     dynamicIslandCard
                     presetsCard
+                    #if SHADOW_UTILITIES
+                    RouterFeatureCard()
+                    #endif
                     ForEach(FeatureGroup.allCases.filter { $0 != .dynamicIsland }, id: \.self) { group in
                         groupCard(group)
                     }
