@@ -21,7 +21,7 @@ import Network
     @Published var password = ""
     @Published private(set) var hasSavedPassword = false
 
-    private enum Keys {
+    enum Keys {
         static let host = "shadowServer.host", port = "shadowServer.port", enabled = "shadowServer.enabled"
     }
     private struct Saved: Codable { let username: String; let password: String }
