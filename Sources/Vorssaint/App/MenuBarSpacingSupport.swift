@@ -202,6 +202,14 @@ enum MenuBarSpacingSupport {
     /// at 11.6pt, against 7.17pt for a plain space); this leaves about 3pt.
     static let compactGlueKern: CGFloat = -4
 
+    /// A disk size as compact mode shows it: "38 GB" gives "38G", "0 B" gives
+    /// "0B". Percentages pass through.
+    static func compactDiskValue(_ value: String) -> String {
+        let joined = value.replacingOccurrences(of: " ", with: "")
+        return joined.hasSuffix("B") && joined.dropLast().last?.isLetter == true
+            ? String(joined.dropLast()) : joined
+    }
+
     /// The glue string drawn between two metric blocks.
     static func blockGlue(readableStyle: Bool, spacing: MenuBarMetricSpacing) -> String {
         switch spacing {

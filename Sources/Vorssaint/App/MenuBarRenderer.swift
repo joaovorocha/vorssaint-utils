@@ -335,8 +335,8 @@ enum MenuBarRenderer {
 
     static func usageBarSize(style: MenuBarBlockStyle, showsPressure: Bool) -> CGSize {
         // Label column + gap + gauge, with nothing spare on the right.
-        let baseWidth: CGFloat = style == .readable ? 19 : 17
-        return CGSize(width: baseWidth + (showsPressure ? 7 : 0),
+        let baseWidth: CGFloat = style == .readable ? 19 : 15
+        return CGSize(width: baseWidth + (showsPressure ? (style == .readable ? 7 : 6) : 0),
                       height: style == .readable ? 22 : 20)
     }
 
@@ -528,7 +528,9 @@ enum MenuBarRenderer {
                                                       pressure: nil)])
                     } else {
                         groups.append([.metricBlock(label: "DSK",
-                                                    value: diskStyle.value(for: disk),
+                                                    value: MenuBarMetricSpacing.current == .compact
+                                                        ? MenuBarSpacingSupport.compactDiskValue(diskStyle.value(for: disk))
+                                                        : diskStyle.value(for: disk),
                                                     minimumValue: diskStyle.minimumValue,
                                                     style: style,
                                                     pressure: nil)])
@@ -593,7 +595,9 @@ enum MenuBarRenderer {
             case .batteryTime:
                 if let power = snapshot.power,
                    let seconds = power.timeRemainingSeconds,
-                   let value = BatteryTimeSupport.formatted(seconds: seconds) {
+                   let value = MenuBarMetricSpacing.current == .compact
+                       ? BatteryTimeSupport.compactFormatted(seconds: seconds)
+                       : BatteryTimeSupport.formatted(seconds: seconds) {
                     groups.append([.metricBlock(label: "BAT",
                                                 value: value,
                                                 minimumValue: "99h 59m",
@@ -1009,10 +1013,10 @@ enum MenuBarRenderer {
         let labelFont = NSFont.systemFont(ofSize: style == .readable ? 6.5 : 6.1, weight: .semibold)
         let labelAttributes = dynamicTextAttributes(font: labelFont)
         let labelWidth: CGFloat = style == .readable ? 6.5 : 6
-        let labelGap: CGFloat = 2
+        let labelGap: CGFloat = style == .readable ? 2 : 1
         let dotDiameter: CGFloat = pressure == nil ? 0 : (style == .readable ? 4.8 : 4.4)
-        let dotGap: CGFloat = pressure == nil ? 0 : 2.2
-        let barWidth: CGFloat = style == .readable ? 10 : 9
+        let dotGap: CGFloat = pressure == nil ? 0 : (style == .readable ? 2.2 : 1.6)
+        let barWidth: CGFloat = style == .readable ? 10 : 8
         let barHeight: CGFloat = style == .readable ? 20 : 18
         let barX = labelWidth + labelGap + dotDiameter + dotGap
         let barY = (size.height - barHeight) / 2

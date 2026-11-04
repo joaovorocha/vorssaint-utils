@@ -53,11 +53,11 @@ enum TMobileGatewayIndicatorDrawing {
                 // Preserve the gateway's actual 0...5 scale.
                 for index in 0..<5 {
                     let barHeight = CGFloat(4 + index * 2)
-                    let rect = NSRect(x: x + CGFloat(index) * 3.6, y: (height - 12) / 2,
-                                      width: 2.4, height: barHeight)
+                    let rect = NSRect(x: x + CGFloat(index) * 3, y: (height - 12) / 2,
+                                      width: 2, height: barHeight)
                     let filled = display.bars.map { index < $0 } ?? false
                     NSColor.labelColor.withAlphaComponent(filled ? 1 : 0.22).setFill()
-                    NSBezierPath(roundedRect: rect, xRadius: 1.2, yRadius: 1.2).fill()
+                    NSBezierPath(roundedRect: rect, xRadius: 1, yRadius: 1).fill()
                 }
             }
             if let x = layout.bandsX {
@@ -81,20 +81,20 @@ enum TMobileGatewayIndicatorDrawing {
         let uc = display.badge == "5G UC"
         let badge = uc ? "5G" : display.badge
         let badgeWidth = ceil((badge as NSString).size(withAttributes: [
-            .font: NSFont.systemFont(ofSize: 12, weight: .bold)]).width) + (uc ? 7 : 0)
+            .font: NSFont.systemFont(ofSize: 12, weight: .bold)]).width) + (uc ? 6 : 0)
         let bands = display.bands.isEmpty ? "—" : display.bands
         let bandWidth = max(18, ceil((bands as NSString).size(withAttributes: [
             .font: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .medium)]).width))
         var width: CGFloat = 0
         func append(_ pieceWidth: CGFloat) -> CGFloat {
-            if width > 0 { width += 4 }
+            if width > 0 { width += 3 }
             let x = width
             width += pieceWidth
             return x
         }
         let technologyX = components.contains(.technology) ? append(badgeWidth) : nil
-        // The fifth bar ends at 16.8 (4 * 3.6 + 2.4).
-        let barsX = components.contains(.bars) ? append(17) : nil
+        // The fifth bar ends at 14 (4 * 3 + 2).
+        let barsX = components.contains(.bars) ? append(14) : nil
         let bandsX = components.contains(.bands) ? append(bandWidth) : nil
         return Layout(size: NSSize(width: width, height: style == .readable ? 23 : 21),
                       technologyX: technologyX, barsX: barsX, bandsX: bandsX, badgeWidth: badgeWidth)

@@ -54,10 +54,10 @@ enum FixturePreferences {
                 let band = display.bands.isEmpty ? "—" : display.bands
                 let bandWidth = max(18, ceil((band as NSString).size(withAttributes: [
                     .font: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .medium)]).width))
-                check(all.technologyX == 0 && all.barsX == all.badgeWidth + 4
-                      && all.bandsX == all.badgeWidth + 25
-                      && all.size.width == all.badgeWidth + 17 + bandWidth + 8,
-                      "Technology, bars and bands sit 4pt apart with no padding after the last piece")
+                check(all.technologyX == 0 && all.barsX == all.badgeWidth + 3
+                      && all.bandsX == all.badgeWidth + 20
+                      && all.size.width == all.badgeWidth + 14 + bandWidth + 6,
+                      "Technology, bars and bands sit 3pt apart with no padding after the last piece")
                 for raw in 1...7 {
                     let components = Components(rawValue: raw)
                     let layout = TMobileGatewayIndicatorDrawing.layout(display, style: style, components: components)
@@ -80,7 +80,7 @@ enum FixturePreferences {
             badge: "LTE", bands: "b2+b66+b12", bars: uc.bars, accessibilityValue: "synthetic")
         check(bars === TMobileGatewayIndicatorDrawing.image(changedText, style: .dense, components: .bars),
               "Bars-only drawing and its cache ignore hidden technology and bands")
-        check(bars.size.width == 17, "Bars only occupies the five bars with no trailing padding")
+        check(bars.size.width == 14, "Bars only occupies the five bars with no trailing padding")
         let zero = connection(bands: ["n41"], bars: 0)
         let full = connection(bands: ["n41"], bars: 5)
         check(pixels(TMobileGatewayIndicatorDrawing.image(zero, style: .dense, components: .bars))

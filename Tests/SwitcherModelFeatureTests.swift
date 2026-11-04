@@ -2269,6 +2269,11 @@ enum SwitcherModelFeatureTests {
                "a three digit value raises the floor")
         suite.expect(MenuBarSpacingSupport.compactFloor(currentDigits: 2, highWater: 3) == 3,
                "the session high-water mark keeps a block from shrinking back and wobbling")
+        suite.expect(MenuBarSpacingSupport.compactDiskValue("38 GB") == "38G"
+                     && MenuBarSpacingSupport.compactDiskValue("1.0 GB") == "1.0G"
+                     && MenuBarSpacingSupport.compactDiskValue("0 B") == "0B"
+                     && MenuBarSpacingSupport.compactDiskValue("67%") == "67%",
+                     "compact disk values drop the space and the byte suffix, not percentages or bare bytes")
         suite.expect(MenuBarSpacingSupport.blockGlue(readableStyle: false, spacing: .standard) == " ",
                "standard dense spacing keeps the full space between blocks")
         suite.expect(MenuBarSpacingSupport.blockGlue(readableStyle: false, spacing: .compact) == "\u{200A}",
