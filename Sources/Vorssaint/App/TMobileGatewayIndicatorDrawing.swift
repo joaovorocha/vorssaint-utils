@@ -72,7 +72,8 @@ enum TMobileGatewayIndicatorDrawing {
         return image
     }
 
-    /// Omitted pieces reserve no space. All three retain their previous geometry.
+    /// Omitted pieces reserve no space, and nothing pads the last piece: the
+    /// menu bar item already supplies its own edge.
     static func layout(_ display: TMobileGatewayMenuBarSupport.ConnectionDisplay,
                        style: MenuBarBlockStyle,
                        components rawComponents: TMobileGatewayMenuBarComponents) -> Layout {
@@ -92,9 +93,10 @@ enum TMobileGatewayIndicatorDrawing {
             return x
         }
         let technologyX = components.contains(.technology) ? append(badgeWidth) : nil
-        let barsX = components.contains(.bars) ? append(18) : nil
+        // The fifth bar ends at 16.8 (4 * 3.6 + 2.4).
+        let barsX = components.contains(.bars) ? append(17) : nil
         let bandsX = components.contains(.bands) ? append(bandWidth) : nil
-        return Layout(size: NSSize(width: width + 4, height: style == .readable ? 23 : 21),
+        return Layout(size: NSSize(width: width, height: style == .readable ? 23 : 21),
                       technologyX: technologyX, barsX: barsX, bandsX: bandsX, badgeWidth: badgeWidth)
     }
 }

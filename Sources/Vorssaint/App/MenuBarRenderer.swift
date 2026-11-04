@@ -334,7 +334,8 @@ enum MenuBarRenderer {
     }
 
     static func usageBarSize(style: MenuBarBlockStyle, showsPressure: Bool) -> CGSize {
-        let baseWidth: CGFloat = style == .readable ? 21 : 19
+        // Label column + gap + gauge, with nothing spare on the right.
+        let baseWidth: CGFloat = style == .readable ? 19 : 17
         return CGSize(width: baseWidth + (showsPressure ? 7 : 0),
                       height: style == .readable ? 22 : 20)
     }
@@ -770,7 +771,9 @@ enum MenuBarRenderer {
                 result.append(cellularBlockAttachment(display: display, style: style))
             case let .text(string):
                 let rendered = string == "\n" && !linePrefix.isEmpty ? "\n" + linePrefix : string
-                result.append(NSAttributedString(string: rendered))
+                result.append(NSAttributedString(string: rendered,
+                                                 attributes: rendered == "\u{200A}"
+                                                     ? [.kern: MenuBarSpacingSupport.compactGlueKern] : [:]))
             case let .symbol(name):
                 result.append(symbolAttachment(named: name, stacked: stacked))
             case let .largeSymbol(name):

@@ -182,6 +182,7 @@ struct MenuBarMetricsPreview: View {
                 .font(.system(size: MenuBarRenderer.statusFontSize(stacked: stacked),
                               weight: stacked ? .semibold : .medium,
                               design: .monospaced))
+                .kerning(string == "\u{200A}" ? MenuBarSpacingSupport.compactGlueKern : 0)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)

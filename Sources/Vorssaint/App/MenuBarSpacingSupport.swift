@@ -198,6 +198,10 @@ enum MenuBarSpacingSupport {
         return out
     }
 
+    /// The monospaced status font draws a hair space a full column wide (6.98pt
+    /// at 11.6pt, against 7.17pt for a plain space); this leaves about 3pt.
+    static let compactGlueKern: CGFloat = -4
+
     /// The glue string drawn between two metric blocks.
     static func blockGlue(readableStyle: Bool, spacing: MenuBarMetricSpacing) -> String {
         switch spacing {
