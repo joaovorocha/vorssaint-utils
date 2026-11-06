@@ -182,6 +182,7 @@ struct MenuBarMetricsPreview: View {
                 .font(.system(size: MenuBarRenderer.statusFontSize(stacked: stacked),
                               weight: stacked ? .semibold : .medium,
                               design: .monospaced))
+                .kerning(string == "\u{200A}" ? MenuBarSpacingSupport.compactGlueKern : 0)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
@@ -300,12 +301,12 @@ struct MenuBarMetricsPreview: View {
                                style: MenuBarBlockStyle,
                                pressure: MemoryPressure?) -> some View {
         let size = MenuBarRenderer.usageBarSize(style: style, showsPressure: pressure != nil)
-        let barWidth: CGFloat = style == .readable ? 10 : 9
+        let barWidth: CGFloat = style == .readable ? 10 : 8
         let barHeight: CGFloat = style == .readable ? 20 : 18
         let innerHeight = barHeight - 4.2
         let clamped = fraction.map(MenuBarUsageBarSupport.clampedFraction)
 
-        return HStack(spacing: 2) {
+        return HStack(spacing: style == .readable ? 2 : 1) {
             VStack(spacing: -1.8) {
                 ForEach(Array(label.prefix(3).enumerated()), id: \.offset) { _, character in
                     Text(String(character))

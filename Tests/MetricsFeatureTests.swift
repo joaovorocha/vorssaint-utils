@@ -316,6 +316,10 @@ enum MetricsFeatureTests {
                "battery time formats an exact hour")
         suite.expect(BatteryTimeSupport.formatted(seconds: 30) == "0h 1m",
                "battery time keeps a positive final minute visible")
+        suite.expect(BatteryTimeSupport.compactFormatted(seconds: 3660) == "1:01"
+                     && BatteryTimeSupport.compactFormatted(seconds: 30) == "0:01"
+                     && BatteryTimeSupport.compactFormatted(seconds: 1e21) == nil,
+                     "compact battery time pads minutes and keeps the invalid-input guard")
         suite.expect(BatteryTimeSupport.formatted(seconds: 1e21) == nil,
                "battery time returns nil rather than trapping on an absurd input")
 
